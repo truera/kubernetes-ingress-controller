@@ -119,13 +119,15 @@ metadata:
 spec:
   controllerName: konghq.com/gateway-controller
 ```
-
 This will be instrumented by the controller manager as a flag, though the above will be the default case when
 the flag isn't set:
 
 ```shell
 manager --gateway-class konghq.com/gateway-controller
 ```
+
+1. I think you are mixing controllerName and GatewayClass.Spec.Name here. Be clear about which one of them the user should be using to tie things together.
+2. The project may benefit from multiple GatewayClasses in future. Like a GatewayClass for each: L4, L7, combined, other features. And to that end, consider naming and versioning the GatewayClass accordingly, something like KongDefaultL7. The specific examples I've given are less relevant, the thing to focus on is GatewayClass names having more semantic to them than just an additional resource. This doesn't need to happen in the first few release at all but please pond 
 
 ##### Additional Considerations
 
@@ -140,6 +142,8 @@ manager --gateway-class konghq.com/gateway-controller
 **NOTE**: required for milestone 1 in [graduation criteria](#graduation-criteria)
 
 For the first iteration of our Gateway API support we will have some limits on functionality that would best be codified. For all Gateway related APIs, but particularly the `Gateway` API itself a custom webhook will be added to validate resources. The result of which is that end-users will receive an upfront error when they post configurations with options that are not yet supported (see the sections below for components and features that are still TODO).
+
+Interesting, so what happens if KIC is installed in a cluster which already has another Gateway API implementation? Will this not block resources with features that KIC doesn't support to not be usable by the other implementation? 
 
 #### Gateway Controller
 
@@ -204,6 +208,8 @@ spec:
     protocol: HTTP
     port: 80
 ```
+
+nit: You are leaking (unnecessary) implementation details in the annotation name. Consider using `konghq.com/lifecycle-mode: managed` or something like that. Very abstract.
 
 The above example is effectively the MVP for `Gateway` support, in that it would operationally function exactly like a default KIC deployment does now (the kong proxy is in the same pod as the controller and data-plane configurations occur over the same network namespace's via localhost) while also being explicit about the operational mode which will be documentative, help maintain a separate code path for this operational mode, and enable validation code in the early iterations to provide clear errors to the end-user.
 
@@ -312,6 +318,10 @@ In order to consider this KEP `implemented` we must have the following present:
 
 [docs]:https://docs.konghq.com/kubernetes-ingress-controller/
 
+General commentary:
+Upstream gateway-api is discussing conformance testing. Where possible, make sure to write less implementatoin-specific tests and rather contribute to upstream.
+Also, run those upstream conformance tests in our CI itself.
+
 ### Graduation Criteria
 
 The following highlights milestones along the path of Gateway support maturity.
@@ -344,6 +354,9 @@ The milestones may correlate directly with [Github Milestones][github-milestones
 
 #### Milestone 3 - Alpha Quality - Operator Support (provisional)
 
+Consider getting rid of lifecycle management altogether.
+Focus on getting Gateway API support to GA without lifecycle management. We are passionate about it, our users will be very forgiving if we don't have it (it being lifecycle management). 
+
 - [ ] operator support for provisioning and managing the lifecycle of `Gateway` resources is added
 - [ ] operator has support for automatic upgrades of provisioned `Gateways`
 - [ ] operator has support for health checking and rollback mechanisms for provisioned `Gateways`
@@ -361,8 +374,8 @@ Production readiness of this feature is marked by the following requirements:
 - All milestones of the above `Graduation Criteria` have been completed
 - We have support for all of the [entire Gateway APIs spec][gateway-spec]
 - Our integration and E2E testing provides feature cover and strong regression protections
-- Gateway APIs themselves have reached a GA status in upstream Kubernetes
-- A version of Kubernetes which includes the Gateway APIs standard becomes GA
+- Gateway APIs themselves have reached a GA status in upstream Kubernetes -> Users must be able to use beta API in production. We CANNOT wait for Gateway API to reach GA before we can have users using it in prod. The naming is contextual here. Beta in k8s requires prod usage to graduate to GA. 
+- A version of Kubernetes which includes the Gateway APIs standard becomes GA -> no one even knows if that will even happen. Recommend removing it.
 - Gateway API documentation is added to [our documentation][kong-docs]
 
 [gateway-spec]:https://gateway-api.sigs.k8s.io/v1alpha2/references/spec/

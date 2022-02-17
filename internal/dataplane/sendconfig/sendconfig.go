@@ -23,6 +23,8 @@ import (
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/metrics"
 )
 
+const initialHash = "00000000000000000000000000000000"
+
 func equalSHA(a, b []byte) bool {
 	return reflect.DeepEqual(a, b)
 }
@@ -50,14 +52,18 @@ func PerformUpdate(ctx context.Context,
 			if !hasSHAUpdateAlreadyBeenReported(newSHA) {
 				log.Debugf("sha %s has been reported", hex.EncodeToString(newSHA))
 			}
-			// TODO un-fake this once new go-kong functionality is available
+			// we assume ready as not all Kong versions provide their configuration hash, and their readiness state
+			// is always unknown
 			ready := true
-			//ready, err := kongConfig.Client.Info.IsConfigReady()
-			//if err != nil {
-			//	log.Errorf("checking config status failed: %w", err)
-			//	log.Debug("configuration state unknown, skipping sync to kong")
-			//	return oldSHA, nil
-			//}
+			status, err := kongConfig.Client.Status(ctx)
+			if err != nil {
+				log.Errorf("checking config status failed: %w", err)
+				log.Debug("configuration state unknown, skipping sync to kong")
+				return oldSHA, nil
+			}
+			if status.ConfigurationHash == initialHash {
+				ready = false
+			}
 			if ready {
 				log.Debug("no configuration change, skipping sync to kong")
 				return oldSHA, nil

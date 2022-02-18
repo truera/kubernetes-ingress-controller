@@ -667,6 +667,8 @@ func verifyIngress(ctx context.Context, t *testing.T, env environments.Environme
 			if !strings.Contains(b.String(), "<title>httpbin.org</title>") {
 				return false
 			}
+		} else {
+			return false
 		}
 		// verify the KongIngress method restriction
 		fakeData := url.Values{}

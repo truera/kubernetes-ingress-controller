@@ -195,8 +195,6 @@ func TestDeployAllInOneDBLESS(t *testing.T) {
 	t.Log("killing Kong process to simulate a crash and container restart")
 	killKong(ctx, t, env, &pod)
 
-	// TODO this is _working_ currently, even though we lack the feature to push config when empty.
-	// need to investigate why it's still viable despite the crash
 	t.Log("confirming that routes are restored after crash")
 	verifyIngress(ctx, t, env)
 
@@ -1074,6 +1072,9 @@ images:
 - name: kong/kubernetes-ingress-controller
   newName: %v
   newTag: '%v'
+- name: kong
+  newName: kong/kong
+  newTag: 'latest'
 `
 
 // patchControllerImage takes a manifest, image, and tag and runs kustomize to replace the

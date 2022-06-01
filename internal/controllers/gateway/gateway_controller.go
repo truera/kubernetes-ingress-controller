@@ -290,6 +290,43 @@ func (r *GatewayReconciler) reconcileUnmanagedGateway(ctx context.Context, log l
 		return ctrl.Result{}, r.Status().Update(ctx, pruneGatewayStatusConds(gateway))
 	}
 
+	// this probably actually needs to be more complex to account for multiple
+	// references to the same certificate the end result we want from that is
+	// that we assign them multiple SNIs, so we actually need to collect
+	// certificates as we go and append to a list of SNIs before inserting them
+	// all at the end. didn't bother since we don't really have the facilities
+	// to insert SNIs anyway (we assume (correctly for Ingress) we'll only get
+	// them later), hence the pretend annotation injection, which is not
+	// something we want to actually do
+	for _, listener := range gateway.Spec.Listeners {
+		if listener.TLS != nil {
+			// pretend we actually resolved the SecretObjectReference and put it in certificate instead of cheating
+			certificate := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"konghq.com/certificate-sni": string(*listener.Hostname),
+					},
+				},
+			}
+			if err := r.DataplaneClient.UpdateObject(certificate); err != nil {
+				debug(log, gateway, "failed to update object in data-plane, requeueing")
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	// at this point, great, we have all our certificates and all of our SNIs!
+	// however, we're about to clobber all our listeners with the
+	// service-derived ones. unfortunately, unlike AllowedRoutes, we can't
+	// simply shove like type TLSConfigs into the appropriate listener
+	// without losing information: listeners can only have a single hostname. We
+	// could insert certificates with the correct hostname upon user update,
+	// but we would then have no way to delete them: after we clobber those
+	// extra listeners and their hostname info are gone. To delete we'd need to
+	// require users add the complete set of listener+cert configs they want
+	// every time they update the gateway (even if they're changing something
+	// else
+
 	if !areAllowedRoutesConsistentByProtocol(gateway.Spec.Listeners) {
 		return ctrl.Result{}, fmt.Errorf("all listeners for a protocol must use the same AllowedRoutes")
 	}

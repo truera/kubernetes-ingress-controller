@@ -24,7 +24,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -44,6 +44,7 @@ import (
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	ctrlutils "github.com/kong/kubernetes-ingress-controller/v2/internal/controllers/utils"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 	kongv1 "github.com/kong/kubernetes-ingress-controller/v2/pkg/apis/configuration/v1"
 	kongv1beta1 "github.com/kong/kubernetes-ingress-controller/v2/pkg/apis/configuration/v1beta1"
 )
@@ -112,7 +113,7 @@ type Store struct {
 	isValidIngressClass   func(objectMeta *metav1.ObjectMeta, annotation string, handling annotations.ClassMatching) bool
 	isValidIngressV1Class func(ingress *networkingv1.Ingress, handling annotations.ClassMatching) bool
 
-	logger logrus.FieldLogger
+	logger logr.Logger
 }
 
 // CacheStores stores cache.Store for all Kinds of k8s objects that
@@ -400,7 +401,7 @@ func (c CacheStores) Delete(obj runtime.Object) error {
 
 // New creates a new object store to be used in the ingress controller
 func New(cs CacheStores, ingressClass string, processClasslessIngressV1Beta1 bool, processClasslessIngressV1 bool,
-	processClasslessKongConsumer bool, logger logrus.FieldLogger) Storer {
+	processClasslessKongConsumer bool, logger logr.Logger) Storer {
 	var ingressV1Beta1ClassMatching annotations.ClassMatching
 	var ingressV1ClassMatching annotations.ClassMatching
 	var kongConsumerClassMatching annotations.ClassMatching
@@ -464,7 +465,8 @@ func (s Store) ListIngressesV1() []*networkingv1.Ingress {
 	for _, item := range s.stores.IngressV1.List() {
 		ing, ok := item.(*networkingv1.Ingress)
 		if !ok {
-			s.logger.Warnf("listIngressesV1: dropping object of unexpected type: %#v", item)
+			msg := fmt.Sprintf("listIngressesV1: dropping object of unexpected type: %#v", item)
+			s.logger.V(util.WarnLevel).Info(msg)
 			continue
 		}
 		if ing.ObjectMeta.GetAnnotations()[annotations.IngressClassKey] != "" {
@@ -478,7 +480,8 @@ func (s Store) ListIngressesV1() []*networkingv1.Ingress {
 		} else {
 			class, err := s.GetIngressClassV1(s.ingressClass)
 			if err != nil {
-				s.logger.Debugf("IngressClass %s not found", s.ingressClass)
+				msg := fmt.Sprintf("IngressClass %s not found", s.ingressClass)
+				s.logger.V(util.DebugLevel).Info(msg)
 				continue
 			}
 			if !ctrlutils.IsDefaultIngressClass(class) {
@@ -503,7 +506,8 @@ func (s Store) ListIngressClassesV1() []*networkingv1.IngressClass {
 	for _, item := range s.stores.IngressClassV1.List() {
 		class, ok := item.(*networkingv1.IngressClass)
 		if !ok {
-			s.logger.Warnf("listIngressClassesV1: dropping object of unexpected type: %#v", item)
+			msg := fmt.Sprintf("listIngressClassesV1: dropping object of unexpected type: %#v", item)
+			s.logger.V(util.WarnLevel).Info(msg)
 			continue
 		}
 		if class.Spec.Controller != IngressClassKongController {
@@ -865,13 +869,15 @@ func (s Store) networkingIngressV1Beta1(obj interface{}) *networkingv1beta1.Ingr
 	case *extensions.Ingress:
 		out, err := toNetworkingIngressV1Beta1(obj)
 		if err != nil {
-			s.logger.Errorf("cannot convert to networking v1beta1 Ingress: %v", err)
+			msg := fmt.Sprintf("cannot convert to networking v1beta1 Ingress: %v", err)
+			s.logger.V(util.ErrorLevel).Info(msg)
 			return nil
 		}
 		return out
 
 	default:
-		s.logger.Errorf("cannot convert to networking v1beta1 Ingress: unsupported type: %v", reflect.TypeOf(obj))
+		msg := fmt.Sprintf("cannot convert to networking v1beta1 Ingress: unsupported type: %v", reflect.TypeOf(obj))
+		s.logger.V(util.ErrorLevel).Info(msg)
 		return nil
 	}
 }
@@ -881,7 +887,8 @@ func (s Store) networkingIngressV1Beta1(obj interface{}) *networkingv1beta1.Ingr
 func (s Store) getIngressClassHandling() annotations.ClassMatching {
 	class, err := s.GetIngressClassV1(s.ingressClass)
 	if err != nil {
-		s.logger.Debugf("IngressClass %s not found", s.ingressClass)
+		msg := fmt.Sprintf("IngressClass %s not found", s.ingressClass)
+		s.logger.V(util.DebugLevel).Info(msg)
 		return annotations.ExactClassMatch
 	}
 	if ctrlutils.IsDefaultIngressClass(class) {

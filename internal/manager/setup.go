@@ -7,11 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bombsimon/logrusr/v2"
 	"github.com/go-logr/logr"
 	"github.com/kong/deck/cprint"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -30,18 +28,17 @@ import (
 // Controller Manager - Setup Utility Functions
 // -----------------------------------------------------------------------------
 
-func setupLoggers(c *Config) (logrus.FieldLogger, logr.Logger, error) {
-	deprecatedLogger, err := util.MakeLogger(c.LogLevel, c.LogFormat)
+func setupLoggers(c *Config) (logr.Logger, error) {
+	logger, err := util.MakeLogger(c.LogLevel, c.LogFormat)
 	if err != nil {
-		return nil, logr.Logger{}, fmt.Errorf("failed to make logger: %w", err)
+		return logr.Logger{}, fmt.Errorf("failed to make logger: %w", err)
 	}
 
 	if c.LogReduceRedundancy {
-		deprecatedLogger.Info("WARNING: log stifling has been enabled (experimental)")
-		deprecatedLogger = util.MakeDebugLoggerWithReducedRedudancy(os.Stdout, &logrus.TextFormatter{}, 3, time.Second*30)
+		logger.V(util.WarnLevel).Info("WARNING: log stifling has been enabled (experimental)")
+		logger = util.MakeDebugLoggerWithReducedRedundancy(os.Stdout, c.LogFormat, 3, time.Second*30)
 	}
 
-	logger := logrusr.New(deprecatedLogger)
 	ctrl.SetLogger(logger)
 
 	if c.LogLevel != "trace" && c.LogLevel != "debug" {
@@ -49,7 +46,7 @@ func setupLoggers(c *Config) (logrus.FieldLogger, logr.Logger, error) {
 		cprint.DisableOutput = true
 	}
 
-	return deprecatedLogger, logger, nil
+	return logger, nil
 }
 
 func setupControllerOptions(logger logr.Logger, c *Config, scheme *runtime.Scheme,
@@ -131,14 +128,14 @@ func setupKongConfig(ctx context.Context, kongClient *kong.Client, logger logr.L
 }
 
 func setupDataplaneSynchronizer(
+	setupLogger logr.Logger,
 	logger logr.Logger,
-	fieldLogger logrus.FieldLogger,
 	mgr manager.Manager,
 	dataplaneClient dataplane.Client,
 	c *Config,
 ) (*dataplane.Synchronizer, error) {
 	if c.ProxySyncSeconds < dataplane.DefaultSyncSeconds {
-		logger.Info(fmt.Sprintf("WARNING: --proxy-sync-seconds is configured for %fs, in DBLESS mode this may result in"+
+		setupLogger.Info(fmt.Sprintf("WARNING: --proxy-sync-seconds is configured for %fs, in DBLESS mode this may result in"+
 			" problems of inconsistency in the proxy state. For DBLESS mode %fs+ is recommended (3s is the default).",
 			c.ProxySyncSeconds, dataplane.DefaultSyncSeconds,
 		))
@@ -146,12 +143,12 @@ func setupDataplaneSynchronizer(
 
 	syncTickDuration, err := time.ParseDuration(fmt.Sprintf("%gs", c.ProxySyncSeconds))
 	if err != nil {
-		logger.Error(err, "%s is not a valid number of seconds to stagger the proxy server synchronization")
+		setupLogger.Error(err, "%s is not a valid number of seconds to stagger the proxy server synchronization")
 		return nil, err
 	}
 
 	dataplaneSynchronizer, err := dataplane.NewSynchronizerWithStagger(
-		fieldLogger.WithField("subsystem", "dataplane-synchronizer"),
+		logger.WithValues("subsystem", "dataplane-synchronizer"),
 		dataplaneClient,
 		syncTickDuration,
 	)
@@ -178,7 +175,7 @@ func setupAdmissionServer(ctx context.Context, managerConfig *Config, managerCli
 		return nil
 	}
 
-	logger := log.WithField("component", "admission-server")
+	logger := log.WithValues("component", "admission-server")
 
 	kongclient, err := managerConfig.GetKongClient(ctx)
 	if err != nil {
@@ -199,7 +196,7 @@ func setupAdmissionServer(ctx context.Context, managerConfig *Config, managerCli
 	}
 	go func() {
 		err := srv.ListenAndServeTLS("", "")
-		log.WithError(err).Error("admission webhook server stopped")
+		log.V(util.ErrorLevel).Info("admission webhook server stopped", "error", err)
 	}()
 	return nil
 }

@@ -6,9 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bombsimon/logrusr/v2"
 	"github.com/go-logr/logr"
-	"github.com/sirupsen/logrus"
 )
 
 // -----------------------------------------------------------------------------
@@ -52,7 +50,7 @@ type Synchronizer struct {
 // NewSynchronizer will provide a new Synchronizer object. Note that this
 // starts some background goroutines and the caller is resonsible for marking
 // the provided context.Context as "Done()" to shut down the background routines
-func NewSynchronizer(logger logrus.FieldLogger, dataplaneClient Client) (*Synchronizer, error) {
+func NewSynchronizer(logger logr.Logger, dataplaneClient Client) (*Synchronizer, error) {
 	stagger, err := time.ParseDuration(fmt.Sprintf("%gs", DefaultSyncSeconds))
 	if err != nil {
 		return nil, err
@@ -64,9 +62,9 @@ func NewSynchronizer(logger logrus.FieldLogger, dataplaneClient Client) (*Synchr
 // stagger time for data-plane updates to occur. Note that this starts some
 // background goroutines and the caller is resonsible for marking the provided
 // context.Context as "Done()" to shut down the background routines
-func NewSynchronizerWithStagger(logger logrus.FieldLogger, dataplaneClient Client, stagger time.Duration) (*Synchronizer, error) {
+func NewSynchronizerWithStagger(logger logr.Logger, dataplaneClient Client, stagger time.Duration) (*Synchronizer, error) {
 	synchronizer := &Synchronizer{
-		logger:          logrusr.New(logger),
+		logger:          logger,
 		dataplaneClient: dataplaneClient,
 		stagger:         stagger,
 		configApplied:   false,

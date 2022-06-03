@@ -2,10 +2,16 @@ package util
 
 import (
 	"fmt"
+	"io"
 
+	"github.com/bombsimon/logrusr/v2"
+	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
 )
 
+// TODO (jrsmroz): Remove comment after removing logrus
+// TODO (jrsmroz): Why only 3 levels are defined here?
+// TODO (jrsmroz): What is controller-runtime?
 // we currently implement two different loggers and use a middleware called
 // logrusr to translate logrus loggers into go-logrs (used by controller-runtime).
 // The middleware currently squashes loglevels 0-4 together and effectively starts
@@ -16,19 +22,44 @@ import (
 //
 // See: https://github.com/Kong/kubernetes-ingress-controller/issues/1893
 const (
-	logrusrDiff = 4
 
-	// InfoLevel is the converted logging level from logrus to go-logr for
-	// information level logging. Note that the logrusr middleware technically
-	// flattens all levels prior to this level into this level as well.
-	InfoLevel = int(logrus.InfoLevel) - logrusrDiff
+	// PanicLevel level, highest level of severity. Logs and then calls panic with the
+	// message passed to Debug, Info, ...
+	// TODO (jrsmroz): go-logrs has no panic
+	PanicLevel int = 0
 
-	// DebugLevel is the converted logging level from logrus to go-logr for
-	// debug level logging.
-	DebugLevel = int(logrus.DebugLevel) - logrusrDiff
+	// FatalLevel level. Logs and then calls os.Exit(1) with the
+	// message passed to Debug, Info, ...
+	// TODO (jrsmroz): go-logrs has no fatal that would exit.
+	FatalLevel int = 0 //1
 
-	// WarnLevel is the converted logrus level to go-logr for warnings
-	WarnLevel = int(logrus.WarnLevel) - logrusrDiff
+	// ErrorLevel level. Logs and then calls os.Exit(1) with the
+	// message passed to Debug, Info, ...
+	ErrorLevel int = 0 // 2
+
+	// WarnLevel level. Commonly used for logging of warning messages.
+	WarnLevel int = 0 // 3
+
+	// InfoLevel level. Commonly used for logging of informational messages.
+	InfoLevel int = 0 // 4
+
+	// DebugLevel level. Commonly used for logging of debug messages.
+	DebugLevel int = 1 // 5
+
+	// TraceLevel level. Highest level of severity. Logs every possible
+	// information about its execution.
+	TraceLevel int = 2 // 6
+
+	// TODO (jrsmroz): Some useful comments to add.
+	// FatalLevel level. Logs and then calls `logger.Exit(1)`. It will exit even if the
+	// logging level is set to Panic.
+	// ErrorLevel level. Logs. Used for errors that should definitely be noted.
+	// Commonly used for hooks to send errors to an error tracking service.
+	// WarnLevel level. Non-critical entries that deserve eyes.
+	// InfoLevel level. General operational entries about what's going on inside the
+	// application.
+	// DebugLevel level. Usually only enabled when debugging. Very verbose logging.
+	// TraceLevel level. Designates finer-grained informational events than the Debug.
 )
 
 var (
@@ -43,20 +74,32 @@ var (
 	}
 )
 
-func MakeLogger(level string, formatter string) (logrus.FieldLogger, error) {
-	log := logrus.New()
-	var err error
+func MakeLogger(level string, formatter string) (logr.Logger, error) {
+	logrusImpl := logrus.New()
 
 	logLevel, err := getLogrusLevel(level)
 	if err != nil {
-		return nil, fmt.Errorf("setting log level failed: %w", err)
-	}
-	if log.Formatter, err = getLogrusFormatter(formatter); err != nil {
-		return nil, fmt.Errorf("setting log formatter failed: %w", err)
+		return logr.Logger{}, fmt.Errorf("setting log level failed: %w", err)
 	}
 
-	log.SetLevel(logLevel)
-	return log, nil
+	if logrusImpl.Formatter, err = getLogrusFormatter(formatter); err != nil {
+		return logr.Logger{}, fmt.Errorf("setting log formatter failed: %w", err)
+	}
+
+	logrusImpl.SetLevel(logLevel)
+	logger := logrusr.New(logrusImpl)
+
+	return logger, nil
+}
+
+func MakeDefaultLogger() logr.Logger {
+	return logrusr.New(logrus.New())
+}
+
+func MakeDefaultLoggerWithWriter(w io.Writer) logr.Logger {
+	lr := logrus.New()
+	lr.SetOutput(w)
+	return logrusr.New(lr)
 }
 
 func getLogrusLevel(level string) (logrus.Level, error) {

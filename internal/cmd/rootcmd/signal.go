@@ -10,8 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bombsimon/logrusr/v2"
-
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/manager"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
@@ -30,11 +28,10 @@ func SetupSignalHandler(cfg *manager.Config) (context.Context, error) {
 		return nil, errors.New("signal handler can only be setup once")
 	}
 
-	deprecatedLogger, err := util.MakeLogger(cfg.LogLevel, cfg.LogFormat)
+	logger, err := util.MakeLogger(cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
 		return nil, err
 	}
-	logger := logrusr.New(deprecatedLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

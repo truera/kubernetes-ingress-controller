@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +34,7 @@ import (
 // equivalent Kong objects and configurations, producing a complete
 // state configuration for the Kong Admin API.
 type Parser struct {
-	logger                      logrus.FieldLogger
+	logger                      logr.Logger
 	storer                      store.Storer
 	configuredKubernetesObjects []client.Object
 
@@ -45,7 +45,7 @@ type Parser struct {
 // NewParser produces a new Parser object provided a logging mechanism
 // and a Kubernetes object store.
 func NewParser(
-	logger logrus.FieldLogger,
+	logger logr.Logger,
 	storer store.Storer,
 ) *Parser {
 	return &Parser{
@@ -159,39 +159,42 @@ func (p *Parser) EnableCombinedServiceRoutes() {
 // Parser - Private Methods
 // -----------------------------------------------------------------------------
 
-func toCACerts(log logrus.FieldLogger, caCertSecrets []*corev1.Secret) []kong.CACertificate {
+func toCACerts(log logr.Logger, caCertSecrets []*corev1.Secret) []kong.CACertificate {
 	var caCerts []kong.CACertificate
 	for _, certSecret := range caCertSecrets {
 		secretName := certSecret.Namespace + "/" + certSecret.Name
 
+		log = log.WithValues(
+			"secret_name", secretName,
+			"secret_namespace", certSecret.Namespace,
+		)
+
 		idbytes, idExists := certSecret.Data["id"]
-		log = log.WithFields(logrus.Fields{
-			"secret_name":      secretName,
-			"secret_namespace": certSecret.Namespace,
-		})
 		if !idExists {
-			log.Errorf("invalid CA certificate: missing 'id' field in data")
+			log.V(util.ErrorLevel).Info("invalid CA certificate: missing 'id' field in data")
 			continue
 		}
 
 		caCertbytes, certExists := certSecret.Data["cert"]
 		if !certExists {
-			log.Errorf("invalid CA certificate: missing 'cert' field in data")
+			log.V(util.ErrorLevel).Info("invalid CA certificate: missing 'cert' field in data")
 			continue
 		}
 
 		pemBlock, _ := pem.Decode(caCertbytes)
 		if pemBlock == nil {
-			log.Errorf("invalid CA certificate: invalid PEM block")
+			log.V(util.ErrorLevel).Info("invalid CA certificate: invalid PEM block")
 			continue
 		}
+
 		x509Cert, err := x509.ParseCertificate(pemBlock.Bytes)
 		if err != nil {
-			log.WithError(err).Errorf("invalid CA certificate: failed to parse certificate")
+			log.V(util.ErrorLevel).Info("invalid CA certificate: failed to parse certificate", "error", err)
 			continue
 		}
 		if !x509Cert.IsCA {
-			log.WithError(err).Errorf("invalid CA certificate: certificate is missing the 'CA' basic constraint")
+			log.V(util.ErrorLevel).Info("invalid CA certificate: certificate is missing the 'CA' basic constraint",
+				"error", err)
 			continue
 		}
 
@@ -276,7 +279,7 @@ func findPort(svc *corev1.Service, wantPort kongstate.PortDef) (*corev1.ServiceP
 }
 
 func getUpstreams(
-	log logrus.FieldLogger,
+	log logr.Logger,
 	s store.Storer,
 	serviceMap map[string]kongstate.Service,
 ) []kongstate.Upstream {
@@ -296,14 +299,16 @@ func getUpstreams(
 				// gather the Kubernetes service for the backend
 				k8sService, ok := service.K8sServices[backend.Name]
 				if !ok {
-					log.WithField("service_name", *service.Name).Errorf("can't add target for backend %s: no kubernetes service found", backend.Name)
+					msg := fmt.Sprintf("can't add target for backend %s: no kubernetes service found", backend.Name)
+					log.V(util.ErrorLevel).Info(msg, "service_name", *service.Name)
 					continue
 				}
 
 				// determine the port for the backend
 				port, err := findPort(k8sService, backend.PortDef)
 				if err != nil {
-					log.WithField("service_name", *service.Name).Errorf("can't find port for backend kubernetes service %s/%s: %v", k8sService.Namespace, k8sService.Name, err)
+					msg := fmt.Sprintf("can't find port for backend kubernetes service %s/%s: %v", k8sService.Namespace, k8sService.Name, err)
+					log.V(util.ErrorLevel).Info(msg, "service_name", *service.Name)
 					continue
 				}
 
@@ -311,7 +316,8 @@ func getUpstreams(
 				newTargets := getServiceEndpoints(log, s, k8sService, port)
 
 				if len(newTargets) == 0 {
-					log.WithField("service_name", *service.Name).Errorf("no targets could be found for kubernetes service %s/%s", k8sService.Namespace, k8sService.Name)
+					msg := fmt.Sprintf("no targets could be found for kubernetes service %s/%s", k8sService.Namespace, k8sService.Name)
+					log.V(util.ErrorLevel).Info(msg, "service_name", *service.Name)
 				}
 
 				// if weights were set for the backend then that weight needs to be
@@ -346,7 +352,7 @@ func getUpstreams(
 
 			// warn if an upstream was created with 0 targets
 			if len(targets) == 0 {
-				log.WithField("service_name", *service.Name).Warnf("no targets found to create upstream")
+				log.V(util.WarnLevel).Info("no targets found to create upstream", "service_name", *service.Name)
 			}
 
 			// define the upstream including all the newly populated targets
@@ -386,7 +392,7 @@ func getCertFromSecret(secret *corev1.Secret) (string, string, error) {
 	return cert, key, nil
 }
 
-func getCerts(log logrus.FieldLogger, s store.Storer, secretsToSNIs map[string][]string) []kongstate.Certificate {
+func getCerts(log logr.Logger, s store.Storer, secretsToSNIs map[string][]string) []kongstate.Certificate {
 	snisAdded := make(map[string]bool)
 	// map of cert public key + private key to certificate
 	type certWrapper struct {
@@ -399,18 +405,18 @@ func getCerts(log logrus.FieldLogger, s store.Storer, secretsToSNIs map[string][
 		namespaceName := strings.Split(secretKey, "/")
 		secret, err := s.GetSecret(namespaceName[0], namespaceName[1])
 		if err != nil {
-			log.WithFields(logrus.Fields{
-				"secret_name":      namespaceName[1],
-				"secret_namespace": namespaceName[0],
-			}).WithError(err).Error("failed to fetch secret")
+			log.V(util.ErrorLevel).Info("failed to fetch secret",
+				"secret_namespace", namespaceName[0],
+				"secret_name", namespaceName[1],
+				"error", err)
 			continue
 		}
 		cert, key, err := getCertFromSecret(secret)
 		if err != nil {
-			log.WithFields(logrus.Fields{
-				"secret_name":      namespaceName[1],
-				"secret_namespace": namespaceName[0],
-			}).WithError(err).Error("failed to construct certificate from secret")
+			log.V(util.ErrorLevel).Info("failed to construct certificate from secret",
+				"secret_namespace", namespaceName[0],
+				"secret_name", namespaceName[1],
+				"error", err)
 			continue
 		}
 		kongCert, ok := certs[cert+key]
@@ -453,17 +459,17 @@ func getCerts(log logrus.FieldLogger, s store.Storer, secretsToSNIs map[string][
 }
 
 func getServiceEndpoints(
-	log logrus.FieldLogger,
+	log logr.Logger,
 	s store.Storer,
 	svc *corev1.Service,
 	servicePort *corev1.ServicePort,
 ) []kongstate.Target {
 
-	log = log.WithFields(logrus.Fields{
-		"service_name":      svc.Name,
-		"service_namespace": svc.Namespace,
-		"service_port":      servicePort,
-	})
+	log = log.WithValues(
+		"service_name", svc.Name,
+		"service_namespace", svc.Namespace,
+		"service_port", servicePort,
+	)
 
 	// in theory a Service could have multiple port protocols, we need to ensure we gather
 	// endpoints based on all the protocols the service is configured for. We always check
@@ -479,7 +485,7 @@ func getServiceEndpoints(
 		}
 	}
 	if len(endpoints) == 0 {
-		log.Warningf("no active endpoints")
+		log.V(util.WarnLevel).Info("no active endpoints")
 	}
 
 	return targetsForEndpoints(endpoints)
@@ -487,7 +493,7 @@ func getServiceEndpoints(
 
 // getEndpoints returns a list of <endpoint ip>:<port> for a given service/target port combination.
 func getEndpoints(
-	log logrus.FieldLogger,
+	log logr.Logger,
 	s *corev1.Service,
 	port *corev1.ServicePort,
 	proto corev1.Protocol,
@@ -500,11 +506,11 @@ func getEndpoints(
 		return upsServers
 	}
 
-	log = log.WithFields(logrus.Fields{
-		"service_name":      s.Name,
-		"service_namespace": s.Namespace,
-		"service_port":      port.String(),
-	})
+	log = log.WithValues(
+		"service_name", s.Name,
+		"service_namespace", s.Namespace,
+		"service_port", port.String(),
+	)
 
 	// avoid duplicated upstream servers when the service
 	// contains multiple port definitions sharing the same
@@ -513,13 +519,12 @@ func getEndpoints(
 
 	// ExternalName services
 	if s.Spec.Type == corev1.ServiceTypeExternalName {
-		log.Debug("found service of type=ExternalName")
+		log.V(util.DebugLevel).Info("found service of type=ExternalName")
 
 		targetPort := port.TargetPort.IntValue()
 		// check for invalid port value
 		if targetPort <= 0 {
-			err := fmt.Errorf("invalid port: %v", targetPort)
-			log.WithError(err).Error("invalid service")
+			log.V(util.ErrorLevel).Info("invalid service", "error", fmt.Errorf("invalid port: %v", targetPort))
 			return upsServers
 		}
 
@@ -536,10 +541,10 @@ func getEndpoints(
 
 	}
 
-	log.Debugf("fetching endpoints")
+	log.V(util.DebugLevel).Info("fetching endpoints")
 	ep, err := getEndpoints(s.Namespace, s.Name)
 	if err != nil {
-		log.WithError(err).Error("failed to fetch endpoints")
+		log.V(util.ErrorLevel).Info("failed to fetch endpoints", "error", err)
 		return upsServers
 	}
 
@@ -579,7 +584,8 @@ func getEndpoints(
 		}
 	}
 
-	log.Debugf("found endpoints: %v", upsServers)
+	log.V(util.DebugLevel).Info("found endpoints", "endpoints", upsServers)
+
 	return upsServers
 }
 

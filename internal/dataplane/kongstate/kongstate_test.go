@@ -6,7 +6,6 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -382,7 +381,7 @@ func Test_FillConsumersAndCredentials(t *testing.T) {
 		state := KongState{
 			Version: semver.MustParse("2.3.2"),
 		}
-		state.FillConsumersAndCredentials(logrus.New(), store)
+		state.FillConsumersAndCredentials(util.MakeDefaultLogger(), store)
 		assert.Equal(t, want.Consumers[0].Consumer.Username, state.Consumers[0].Consumer.Username)
 		assert.Equal(t, want.Consumers[0].Consumer.CustomID, state.Consumers[0].Consumer.CustomID)
 		assert.Equal(t, want.Consumers[0].KeyAuths[0].Key, state.Consumers[0].KeyAuths[0].Key)

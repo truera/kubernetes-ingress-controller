@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	networkingv1 "k8s.io/api/networking/v1"
 	networkingv1beta1 "k8s.io/api/networking/v1beta1"
 
@@ -28,10 +27,10 @@ func (p *Parser) ingressRulesFromIngressV1beta1() ingressRules {
 
 	for _, ingress := range ingressList {
 		ingressSpec := ingress.Spec
-		log := p.logger.WithFields(logrus.Fields{
-			"ingress_namespace": ingress.Namespace,
-			"ingress_name":      ingress.Name,
-		})
+		log := p.logger.WithValues(
+			"ingress_namespace", ingress.Namespace,
+			"ingress_name", ingress.Name,
+		)
 
 		if ingressSpec.Backend != nil {
 			allDefaultBackends = append(allDefaultBackends, *ingress)
@@ -49,7 +48,7 @@ func (p *Parser) ingressRulesFromIngressV1beta1() ingressRules {
 				path := rule.Path
 
 				if strings.Contains(path, "//") {
-					log.Errorf("rule skipped: invalid path: '%v'", path)
+					log.V(util.ErrorLevel).Info("rule skipped: invalid path", "path", path)
 					continue
 				}
 				if path == "" {
@@ -176,10 +175,10 @@ func (p *Parser) ingressRulesFromIngressV1() ingressRules {
 
 	for _, ingress := range ingressList {
 		ingressSpec := ingress.Spec
-		log := p.logger.WithFields(logrus.Fields{
-			"ingress_namespace": ingress.Namespace,
-			"ingress_name":      ingress.Name,
-		})
+		log := p.logger.WithValues(
+			"ingress_namespace", ingress.Namespace,
+			"ingress_name", ingress.Name,
+		)
 
 		if ingressSpec.DefaultBackend != nil {
 			allDefaultBackends = append(allDefaultBackends, *ingress)
@@ -201,7 +200,7 @@ func (p *Parser) ingressRulesFromIngressV1() ingressRules {
 				}
 				for j, rulePath := range rule.HTTP.Paths {
 					if strings.Contains(rulePath.Path, "//") {
-						log.Errorf("rule skipped: invalid path: '%v'", rulePath.Path)
+						log.V(util.ErrorLevel).Info("rule skipped: invalid path", "path", rulePath.Path)
 						continue
 					}
 
@@ -212,7 +211,7 @@ func (p *Parser) ingressRulesFromIngressV1() ingressRules {
 
 					paths, err := pathsFromK8s(rulePath.Path, pathType)
 					if err != nil {
-						log.WithError(err).Error("rule skipped: pathsFromK8s")
+						log.V(util.ErrorLevel).Info("rule skipped: pathsFromK8s", "errpr", err)
 						continue
 					}
 

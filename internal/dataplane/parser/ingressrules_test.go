@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/store"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 func TestMergeIngressRules(t *testing.T) {
@@ -277,8 +277,7 @@ func Test_getK8sServicesForBackends(t *testing.T) {
 			require.NoError(t, err)
 
 			stdout := new(bytes.Buffer)
-			logger := logrus.New()
-			logger.SetOutput(stdout)
+			logger := util.MakeDefaultLoggerWithWriter(stdout)
 
 			services, annotations := getK8sServicesForBackends(logger, storer, tt.namespace, tt.backends)
 			assert.Equal(t, tt.expectedServices, services)
@@ -458,8 +457,7 @@ func Test_doK8sServicesMatchAnnotations(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := new(bytes.Buffer)
-			logger := logrus.New()
-			logger.SetOutput(stdout)
+			logger := util.MakeDefaultLoggerWithWriter(stdout)
 			assert.Equal(t, tt.expected, servicesAllUseTheSameKongAnnotations(logger, tt.services, tt.annotations))
 			for _, expectedLogEntry := range tt.expectedLogEntries {
 				assert.Contains(t, stdout.String(), expectedLogEntry)

@@ -12,7 +12,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -94,7 +93,7 @@ func TestReporterOnce(t *testing.T) {
 	}
 	reporter := Reporter{
 		Info:   info,
-		Logger: logrus.New(),
+		Logger: MakeDefaultLogger(),
 	}
 	reqs := make(chan []byte)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -140,7 +139,7 @@ func TestReporterSendStart(t *testing.T) {
 	}
 	reporter := Reporter{
 		Info:   info,
-		Logger: logrus.New(),
+		Logger: MakeDefaultLogger(),
 	}
 
 	reqs := make(chan []byte)
@@ -177,7 +176,7 @@ func TestReporterSendPing(t *testing.T) {
 	}
 	reporter := Reporter{
 		Info:   info,
-		Logger: logrus.New(),
+		Logger: MakeDefaultLogger(),
 	}
 
 	reqs := make(chan []byte)
@@ -214,7 +213,7 @@ func TestReporterRun(t *testing.T) {
 	}
 	reporter := Reporter{
 		Info:   info,
-		Logger: logrus.New(),
+		Logger: MakeDefaultLogger(),
 	}
 
 	reqs := make(chan []byte)

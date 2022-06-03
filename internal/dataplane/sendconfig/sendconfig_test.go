@@ -6,8 +6,9 @@ import (
 
 	"github.com/kong/deck/file"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 func Test_renderConfigWithCustomEntities(t *testing.T) {
@@ -105,7 +106,7 @@ func Test_renderConfigWithCustomEntities(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := renderConfigWithCustomEntities(logrus.New(), tt.args.state, tt.args.customEntitiesJSONBytes)
+			got, err := renderConfigWithCustomEntities(util.MakeDefaultLogger(), tt.args.state, tt.args.customEntitiesJSONBytes)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("renderConfigWithCustomEntities() error = %v, wantErr %v", err, tt.wantErr)
 				return

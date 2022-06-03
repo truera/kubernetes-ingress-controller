@@ -7,7 +7,6 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/google/uuid"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -495,7 +494,7 @@ func Test_generateKongServiceFromBackendRef(t *testing.T) {
 	}
 	fakestore, err := store.NewFakeStore(store.FakeObjects{ReferencePolicies: policies})
 	assert.Nil(t, err)
-	p := NewParser(logrus.New(), fakestore)
+	p := NewParser(util.MakeDefaultLogger(), fakestore)
 	// empty since we always want to actually generate a service for tests
 	// static values for the basic string format inputs since nothing interesting happens with them
 	rules := ingressRules{ServiceNameToServices: map[string]kongstate.Service{}}

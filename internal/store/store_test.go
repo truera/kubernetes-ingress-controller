@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -17,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 func Test_networkingIngressV1Beta1(t *testing.T) {
@@ -124,7 +124,7 @@ func Test_networkingIngressV1Beta1(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := Store{
-				logger: logrus.New(),
+				logger: util.MakeDefaultLogger(),
 			}
 			if got := s.networkingIngressV1Beta1(tt.args.obj); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("networkingIngressV1Beta1() = %v, want %v", got, tt.want)

@@ -16,7 +16,7 @@ import (
 func TestDebugLoggerStiflesConsecutiveEntries(t *testing.T) {
 	// initialize the debug logger with no backoff time, but a limit of 3 consecutive redudant entries
 	buf := new(bytes.Buffer)
-	log := MakeDebugLoggerWithReducedRedudancy(buf, &logrus.JSONFormatter{}, 3, time.Millisecond*0)
+	log := makeDebugLoggerWithReducedRedundancy(buf, &logrus.JSONFormatter{}, 3, time.Millisecond*0)
 	assert.True(t, log.IsLevelEnabled(logrus.DebugLevel))
 	assert.False(t, log.IsLevelEnabled(logrus.TraceLevel))
 
@@ -38,7 +38,7 @@ func TestDebugLoggerStiflesConsecutiveEntries(t *testing.T) {
 func TestDebugLoggerResetsConsecutiveEntries(t *testing.T) {
 	// initialize the debug logger with no backoff time, but a limit of 5 consecutive redudant entries
 	buf := new(bytes.Buffer)
-	log := MakeDebugLoggerWithReducedRedudancy(buf, &logrus.JSONFormatter{}, 5, time.Millisecond*0)
+	log := makeDebugLoggerWithReducedRedundancy(buf, &logrus.JSONFormatter{}, 5, time.Millisecond*0)
 	assert.True(t, log.IsLevelEnabled(logrus.DebugLevel))
 	assert.False(t, log.IsLevelEnabled(logrus.TraceLevel))
 
@@ -68,7 +68,7 @@ func TestDebugLoggerResetsConsecutiveEntries(t *testing.T) {
 func TestDebugLoggerStiflesEntriesWhichAreTooFrequent(t *testing.T) {
 	// initialize the debug logger with no consecutive entry backoff, but a time backoff of 30m
 	buf := new(bytes.Buffer)
-	log := MakeDebugLoggerWithReducedRedudancy(buf, &logrus.JSONFormatter{}, 0, time.Minute*30)
+	log := makeDebugLoggerWithReducedRedundancy(buf, &logrus.JSONFormatter{}, 0, time.Minute*30)
 
 	// spam the logger, but validate that only one entry gets printed within the backoff timeframe
 	for i := 0; i < 100; i++ {
@@ -91,7 +91,7 @@ func TestDebugLoggerStopsStiflingEntriesAfterBackoffExpires(t *testing.T) {
 
 	// initialize the debug logger with no consecutive entry backoff, but a time based backoff
 	buf := new(bytes.Buffer)
-	log := MakeDebugLoggerWithReducedRedudancy(buf, &logrus.JSONFormatter{}, 0, backoff)
+	log := makeDebugLoggerWithReducedRedundancy(buf, &logrus.JSONFormatter{}, 0, backoff)
 
 	// spam the logger and validate that the testing environment didn't take longer than 100ms to process this
 	for i := 0; i < 100; i++ {
@@ -129,7 +129,7 @@ func TestDebugLoggerStopsStiflingEntriesAfterBackoffExpires(t *testing.T) {
 
 func TestDebugLoggerThreadSafety(t *testing.T) {
 	buf := &threadSafeBuffer{buf: new(bytes.Buffer), l: &sync.RWMutex{}}
-	log := MakeDebugLoggerWithReducedRedudancy(buf, &logrus.JSONFormatter{}, 0, time.Minute*30)
+	log := makeDebugLoggerWithReducedRedundancy(buf, &logrus.JSONFormatter{}, 0, time.Minute*30)
 
 	// spam the logger concurrently across several goroutines to ensure no dataraces
 	wg := &sync.WaitGroup{}

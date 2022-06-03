@@ -1,12 +1,13 @@
 package kongstate
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
@@ -171,7 +172,7 @@ func (r *Route) overrideRegexPriority(anns map[string]string) {
 	r.RegexPriority = kong.Int(regexPriority)
 }
 
-func (r *Route) overrideMethods(log logrus.FieldLogger, anns map[string]string) {
+func (r *Route) overrideMethods(log logr.Logger, anns map[string]string) {
 	annMethods := annotations.ExtractMethods(anns)
 	if len(annMethods) == 0 {
 		return
@@ -184,7 +185,8 @@ func (r *Route) overrideMethods(log logrus.FieldLogger, anns map[string]string) 
 		} else {
 			// if any method is invalid (not an uppercase alpha string),
 			// discard everything
-			log.WithField("kongroute", r.Name).Errorf("invalid method: %v", method)
+			msg := fmt.Sprintf("invalid method: %s", method)
+			log.V(util.ErrorLevel).Info(msg, "kongroute", r.Name)
 			return
 		}
 	}
@@ -192,7 +194,7 @@ func (r *Route) overrideMethods(log logrus.FieldLogger, anns map[string]string) 
 	r.Methods = methods
 }
 
-func (r *Route) overrideSNIs(log logrus.FieldLogger, anns map[string]string) {
+func (r *Route) overrideSNIs(log logr.Logger, anns map[string]string) {
 	var annSNIs []string
 	var exists bool
 	annSNIs, exists = annotations.ExtractSNIs(anns)
@@ -208,7 +210,8 @@ func (r *Route) overrideSNIs(log logrus.FieldLogger, anns map[string]string) {
 			snis = append(snis, kong.String(sanitizedSNI))
 		} else {
 			// SNI is not a valid hostname
-			log.WithField("kongroute", r.Name).Errorf("invalid SNI: %v", sni)
+			msg := fmt.Sprintf("invalid SNI: %v", sni)
+			log.V(util.ErrorLevel).Info(msg, "kongroute", r.Name)
 			return
 		}
 	}
@@ -217,7 +220,7 @@ func (r *Route) overrideSNIs(log logrus.FieldLogger, anns map[string]string) {
 }
 
 // overrideByAnnotation sets Route protocols via annotation
-func (r *Route) overrideByAnnotation(log logrus.FieldLogger) {
+func (r *Route) overrideByAnnotation(log logr.Logger) {
 	r.overrideProtocols(r.Ingress.Annotations)
 	r.overrideStripPath(r.Ingress.Annotations)
 	r.overrideHTTPSRedirectCode(r.Ingress.Annotations)
@@ -231,7 +234,7 @@ func (r *Route) overrideByAnnotation(log logrus.FieldLogger) {
 }
 
 // override sets Route fields by KongIngress first, then by annotation
-func (r *Route) override(log logrus.FieldLogger, kongIngress *configurationv1.KongIngress) {
+func (r *Route) override(log logr.Logger, kongIngress *configurationv1.KongIngress) {
 	if r == nil {
 		return
 	}
@@ -248,7 +251,7 @@ func (r *Route) override(log logrus.FieldLogger, kongIngress *configurationv1.Ko
 }
 
 // overrideByKongIngress sets Route fields by KongIngress
-func (r *Route) overrideByKongIngress(log logrus.FieldLogger, kongIngress *configurationv1.KongIngress) {
+func (r *Route) overrideByKongIngress(log logr.Logger, kongIngress *configurationv1.KongIngress) {
 	if kongIngress == nil || kongIngress.Route == nil {
 		return
 	}
@@ -264,10 +267,10 @@ func (r *Route) overrideByKongIngress(log logrus.FieldLogger, kongIngress *confi
 			} else {
 				// if any method is invalid (not an uppercase alpha string),
 				// discard everything
-				log.WithFields(logrus.Fields{
-					"ingress_namespace": r.Ingress.Namespace,
-					"ingress_name":      r.Ingress.Name,
-				}).Errorf("ingress contains invalid method: '%v'", *method)
+				msg := fmt.Sprintf("ingress contains invalid method: '%v'", *method)
+				log.V(util.ErrorLevel).Info(msg,
+					"ingress_namespace", r.Ingress.Namespace,
+					"ingress_name", r.Ingress.Name)
 				invalid = true
 			}
 		}
@@ -304,7 +307,8 @@ func (r *Route) overrideByKongIngress(log logrus.FieldLogger, kongIngress *confi
 				SNIs = append(SNIs, kong.String(SNI))
 			} else {
 				// SNI is not a valid hostname
-				log.WithField("kongroute", r.Name).Errorf("invalid SNI: %v", unsanitizedSNI)
+				msg := fmt.Sprintf("invalid SNI: %v", unsanitizedSNI)
+				log.V(util.ErrorLevel).Info(msg, "kongroute", r.Name)
 				return
 			}
 		}
@@ -319,7 +323,7 @@ func (r *Route) overrideByKongIngress(log logrus.FieldLogger, kongIngress *confi
 }
 
 // overrideRequestBuffering ensures defaults for the request_buffering option
-func (r *Route) overrideRequestBuffering(log logrus.FieldLogger, anns map[string]string) {
+func (r *Route) overrideRequestBuffering(log logr.Logger, anns map[string]string) {
 	annotationValue, ok := annotations.ExtractRequestBuffering(anns)
 	if !ok {
 		// the annotation is not set, quit
@@ -328,8 +332,9 @@ func (r *Route) overrideRequestBuffering(log logrus.FieldLogger, anns map[string
 
 	isEnabled, err := strconv.ParseBool(strings.ToLower(annotationValue))
 	if err != nil {
-		// the value provided is not a parseable boolean, quit
-		log.WithField("kongroute", r.Name).Errorf("invalid request_buffering value: %s", err)
+		// the value provided is not a parsable boolean, quit
+		msg := fmt.Sprintf("invalid request_buffering value: %s", err)
+		log.V(util.ErrorLevel).Info(msg, "kongroute", r.Name)
 		return
 	}
 
@@ -337,7 +342,7 @@ func (r *Route) overrideRequestBuffering(log logrus.FieldLogger, anns map[string
 }
 
 // overrideResponseBuffering ensures defaults for the response_buffering option
-func (r *Route) overrideResponseBuffering(log logrus.FieldLogger, anns map[string]string) {
+func (r *Route) overrideResponseBuffering(log logr.Logger, anns map[string]string) {
 	annotationValue, ok := annotations.ExtractResponseBuffering(anns)
 	if !ok {
 		// the annotation is not set, quit
@@ -347,7 +352,8 @@ func (r *Route) overrideResponseBuffering(log logrus.FieldLogger, anns map[strin
 	isEnabled, err := strconv.ParseBool(strings.ToLower(annotationValue))
 	if err != nil {
 		// the value provided is not a parseable boolean, quit
-		log.WithField("kongroute", r.Name).Errorf("invalid response_buffering value: %s", err)
+		msg := fmt.Sprintf("invalid response_buffering value: %s", err)
+		log.V(util.ErrorLevel).Info(msg, "kongroute", r.Name)
 		return
 	}
 
@@ -355,7 +361,7 @@ func (r *Route) overrideResponseBuffering(log logrus.FieldLogger, anns map[strin
 }
 
 // overrideHosts appends Host-Aliases to Hosts
-func (r *Route) overrideHosts(log logrus.FieldLogger, anns map[string]string) {
+func (r *Route) overrideHosts(log logr.Logger, anns map[string]string) {
 	var hosts []*string
 	var annHostAliases []string
 	var exists bool
@@ -383,7 +389,8 @@ func (r *Route) overrideHosts(log logrus.FieldLogger, anns map[string]string) {
 			hosts = appendIfMissing(hosts, sanitizedHost)
 		} else {
 			// Host Alias is not a valid hostname
-			log.WithField("kongroute", r.Name).Errorf("invalid host: %v", hostAlias)
+			msg := fmt.Sprintf("invalid host: %v", hostAlias)
+			log.V(util.ErrorLevel).Info(msg, "kongroute", r.Name)
 			return
 		}
 	}

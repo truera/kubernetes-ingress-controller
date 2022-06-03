@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +16,7 @@ import (
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	gatewaycontroller "github.com/kong/kubernetes-ingress-controller/v2/internal/controllers/gateway"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 	credsvalidation "github.com/kong/kubernetes-ingress-controller/v2/internal/validation/consumers/credentials"
 	gatewayvalidators "github.com/kong/kubernetes-ingress-controller/v2/internal/validation/gateway"
 	kongv1 "github.com/kong/kubernetes-ingress-controller/v2/pkg/apis/configuration/v1"
@@ -36,7 +37,7 @@ type KongValidator interface {
 type KongHTTPValidator struct {
 	ConsumerSvc   kong.AbstractConsumerService
 	PluginSvc     kong.AbstractPluginService
-	Logger        logrus.FieldLogger
+	Logger        logr.Logger
 	SecretGetter  kongstate.SecretGetter
 	ManagerClient client.Client
 
@@ -50,7 +51,7 @@ type KongHTTPValidator struct {
 func NewKongHTTPValidator(
 	consumerSvc kong.AbstractConsumerService,
 	pluginSvc kong.AbstractPluginService,
-	logger logrus.FieldLogger,
+	logger logr.Logger,
 	managerClient client.Client,
 	ingressClass string,
 ) KongHTTPValidator {
@@ -89,7 +90,7 @@ func (validator KongHTTPValidator) ValidateConsumer(
 	c, err := validator.ConsumerSvc.Get(ctx, &consumer.Username)
 	if err != nil {
 		if !kong.IsNotFoundErr(err) {
-			validator.Logger.WithError(err).Error("failed to fetch consumer from kong")
+			validator.Logger.V(util.ErrorLevel).Info("failed to fetch consumer from kong", "error", err)
 			return false, ErrTextConsumerUnretrievable, err
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -13,6 +12,7 @@ import (
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/store"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 func TestFromKnativeIngress(t *testing.T) {
@@ -182,7 +182,7 @@ func TestFromKnativeIngress(t *testing.T) {
 			KnativeIngresses: []*knative.Ingress{},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromKnativeIngress()
 		assert.Equal(map[string]kongstate.Service{}, parsedInfo.ServiceNameToServices)
@@ -195,7 +195,7 @@ func TestFromKnativeIngress(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromKnativeIngress()
 		assert.Equal(map[string]kongstate.Service{}, parsedInfo.ServiceNameToServices)
@@ -208,7 +208,7 @@ func TestFromKnativeIngress(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromKnativeIngress()
 		assert.Equal(1, len(parsedInfo.ServiceNameToServices))
@@ -253,7 +253,7 @@ func TestFromKnativeIngress(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromKnativeIngress()
 		assert.Equal(SecretNameToSNIs(map[string][]string{
@@ -268,7 +268,7 @@ func TestFromKnativeIngress(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromKnativeIngress()
 		assert.Equal(1, len(parsedInfo.ServiceNameToServices))

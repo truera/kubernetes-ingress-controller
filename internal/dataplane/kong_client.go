@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/deck/file"
 	"github.com/kong/go-kong/kong"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/deckgen"
@@ -30,7 +30,7 @@ import (
 // which parses Kubernetes object caches into Kong Admin configurations and
 // sends them as updates to the data-plane (Kong Admin API).
 type KongClient struct {
-	logger logrus.FieldLogger
+	logger logr.Logger
 
 	// ingressClass indicates the Kubernetes ingress class that should be
 	// used to qualify support for any given Kubernetes object to be parsed
@@ -109,7 +109,7 @@ type KongClient struct {
 // NewKongClient provides a new KongClient object after connecting to the
 // data-plane API and verifying integrity.
 func NewKongClient(
-	logger logrus.FieldLogger,
+	logger logr.Logger,
 	timeout time.Duration,
 	ingressClass string,
 	enableReverseSync bool,
@@ -294,7 +294,7 @@ func (c *KongClient) Update(ctx context.Context) error {
 	storer := store.New(*c.cache, c.ingressClass, false, false, false, c.logger)
 
 	// initialize a parser
-	c.logger.Debug("parsing kubernetes objects into data-plane configuration")
+	c.logger.V(util.DebugLevel).Info("parsing kubernetes objects into data-plane configuration")
 	p := parser.NewParser(c.logger, storer)
 	if c.AreKubernetesObjectReportsEnabled() {
 		p.EnableKubernetesObjectReports()
@@ -314,10 +314,10 @@ func (c *KongClient) Update(ctx context.Context) error {
 	c.prometheusMetrics.TranslationCount.With(prometheus.Labels{
 		metrics.SuccessKey: metrics.SuccessTrue,
 	}).Inc()
-	c.logger.Debug("successfully built data-plane configuration")
+	c.logger.V(util.DebugLevel).Info("successfully built data-plane configuration")
 
 	// generate the deck configuration to be applied to the admin API
-	c.logger.Debug("converting configuration to deck config")
+	c.logger.V(util.DebugLevel).Info("converting configuration to deck config")
 	targetConfig := deckgen.ToDeckContent(ctx,
 		c.logger, kongstate,
 		c.kongConfig.PluginSchemaStore,
@@ -342,7 +342,7 @@ func (c *KongClient) Update(ctx context.Context) error {
 	}
 
 	// apply the configuration update in Kong
-	c.logger.Debug("sending configuration to Kong Admin API")
+	c.logger.V(util.DebugLevel).Info("sending configuration to Kong Admin API")
 	timedCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 	newConfigSHA, err := sendconfig.PerformUpdate(timedCtx,
@@ -362,9 +362,9 @@ func (c *KongClient) Update(ctx context.Context) error {
 		if c.diagnostic != (util.ConfigDumpDiagnostic{}) {
 			select {
 			case c.diagnostic.Configs <- util.ConfigDump{Failed: true, Config: *diagnosticConfig}:
-				c.logger.Debug("shipping config to diagnostic server")
+				c.logger.V(util.DebugLevel).Info("shipping config to diagnostic server")
 			default:
-				c.logger.Error("config diagnostic buffer full, dropping diagnostic config")
+				c.logger.V(util.ErrorLevel).Info("config diagnostic buffer full, dropping diagnostic config")
 			}
 		}
 		return err
@@ -374,9 +374,9 @@ func (c *KongClient) Update(ctx context.Context) error {
 	if c.diagnostic != (util.ConfigDumpDiagnostic{}) {
 		select {
 		case c.diagnostic.Configs <- util.ConfigDump{Failed: false, Config: *diagnosticConfig}:
-			c.logger.Debug("shipping config to diagnostic server")
+			c.logger.V(util.DebugLevel).Info("shipping config to diagnostic server")
 		default:
-			c.logger.Error("config diagnostic buffer full, dropping diagnostic config")
+			c.logger.V(util.ErrorLevel).Info("config diagnostic buffer full, dropping diagnostic config")
 		}
 	}
 
@@ -384,10 +384,11 @@ func (c *KongClient) Update(ctx context.Context) error {
 	if c.AreKubernetesObjectReportsEnabled() {
 		if string(c.lastConfigSHA) != string(newConfigSHA) {
 			report := p.GenerateKubernetesObjectReport()
-			c.logger.Debugf("triggering report for %d configured Kubernetes objects", len(report))
+			c.logger.V(util.DebugLevel).Info(
+				fmt.Sprintf("triggering report for %d configured Kubernetes objects", len(report)))
 			c.triggerKubernetesObjectReport(report...)
 		} else {
-			c.logger.Debug("no configuration change, skipping kubernetes object report")
+			c.logger.V(util.DebugLevel).Info("no configuration change, skipping kubernetes object report")
 		}
 	}
 

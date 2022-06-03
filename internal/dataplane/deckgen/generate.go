@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/deck/file"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
@@ -17,7 +17,7 @@ import (
 // ToDeckContent generates a decK configuration from `k8sState` and auxiliary parameters.
 func ToDeckContent(
 	ctx context.Context,
-	log logrus.FieldLogger,
+	log logr.Logger,
 	k8sState *kongstate.KongState,
 	schemas *util.PluginSchemaStore,
 	selectorTags []string,
@@ -34,7 +34,7 @@ func ToDeckContent(
 			}
 			err = fillPlugin(ctx, &plugin, schemas)
 			if err != nil {
-				log.Errorf("failed to fill-in defaults for plugin: %s", *plugin.Name)
+				log.V(util.ErrorLevel).Info("error filling in default for plugin", "plugin", *plugin.Name, "error", err)
 			}
 			service.Plugins = append(service.Plugins, &plugin)
 			sort.SliceStable(service.Plugins, func(i, j int) bool {
@@ -52,7 +52,7 @@ func ToDeckContent(
 				}
 				err = fillPlugin(ctx, &plugin, schemas)
 				if err != nil {
-					log.Errorf("failed to fill-in defaults for plugin: %s", *plugin.Name)
+					log.V(util.ErrorLevel).Info("error filling in default for plugin", "plugin", *plugin.Name, "error", err)
 				}
 				route.Plugins = append(route.Plugins, &plugin)
 				sort.SliceStable(route.Plugins, func(i, j int) bool {
@@ -76,7 +76,7 @@ func ToDeckContent(
 		}
 		err = fillPlugin(ctx, &plugin, schemas)
 		if err != nil {
-			log.Errorf("failed to fill-in defaults for plugin: %s", *plugin.Name)
+			log.V(util.ErrorLevel).Info("error filling in default for plugin", "plugin", *plugin.Name, "error", err)
 		}
 		content.Plugins = append(content.Plugins, plugin)
 	}
@@ -124,7 +124,7 @@ func ToDeckContent(
 		// fail the rest of the deckgen either or this will result in one bad consumer being capable of
 		// stopping all updates to the Kong Admin API.
 		if consumer.Username == nil {
-			log.Errorf("invalid consumer received (username was empty)")
+			log.V(util.ErrorLevel).Info("invalid consumer received (username was empty)")
 			continue
 		}
 

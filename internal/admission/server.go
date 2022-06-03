@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-logr/logr"
 	admission "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 	configuration "github.com/kong/kubernetes-ingress-controller/v2/pkg/apis/configuration/v1"
 )
 
@@ -40,7 +41,7 @@ type ServerConfig struct {
 	Key     string
 }
 
-func (sc *ServerConfig) toTLSConfig(ctx context.Context, log logrus.FieldLogger) (*tls.Config, error) {
+func (sc *ServerConfig) toTLSConfig(ctx context.Context, log logr.Logger) (*tls.Config, error) {
 	var watcher *certwatcher.CertWatcher
 	var cert, key []byte
 	switch {
@@ -79,7 +80,7 @@ func (sc *ServerConfig) toTLSConfig(ctx context.Context, log logrus.FieldLogger)
 
 	go func() {
 		if err := watcher.Start(ctx); err != nil {
-			log.WithError(err).Error("certificate watcher error")
+			log.V(util.ErrorLevel).Info("certificate watcher failed", "error", err)
 		}
 	}()
 	return &tls.Config{ // nolint:gosec
@@ -90,7 +91,7 @@ func (sc *ServerConfig) toTLSConfig(ctx context.Context, log logrus.FieldLogger)
 }
 
 func MakeTLSServer(ctx context.Context, config *ServerConfig, handler http.Handler,
-	log logrus.FieldLogger) (*http.Server, error) {
+	log logr.Logger) (*http.Server, error) {
 	tlsConfig, err := config.toTLSConfig(ctx, log)
 	if err != nil {
 		return nil, err
@@ -109,46 +110,46 @@ type RequestHandler struct {
 	// it the server to validate.
 	Validator KongValidator
 
-	Logger logrus.FieldLogger
+	Logger logr.Logger
 }
 
 // ServeHTTP parses AdmissionReview requests and responds back
 // with the validation result of the entity.
 func (a RequestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
-		a.Logger.Error("received request with empty body")
+		a.Logger.V(util.ErrorLevel).Info("received request with empty body")
 		http.Error(w, "admission review object is missing",
 			http.StatusBadRequest)
 		return
 	}
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		a.Logger.WithError(err).Error("failed to read request from client")
+		a.Logger.V(util.ErrorLevel).Info("failed to read request body", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	review := admission.AdmissionReview{}
 	if err := json.Unmarshal(data, &review); err != nil {
-		a.Logger.WithError(err).Error("failed to parse AdmissionReview object")
+		a.Logger.V(util.ErrorLevel).Info("failed to parse AdmissionReview object", "error", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	response, err := a.handleValidation(r.Context(), *review.Request)
 	if err != nil {
-		a.Logger.WithError(err).Error("failed to run validation")
+		a.Logger.V(util.ErrorLevel).Info("failed to run validation", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	review.Response = response
 	data, err = json.Marshal(review)
 	if err != nil {
-		a.Logger.WithError(err).Error("failed to marshal response")
+		a.Logger.V(util.ErrorLevel).Info("failed to marshal response", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	_, err = w.Write(data)
 	if err != nil {
-		a.Logger.WithError(err).Error("failed to write response")
+		a.Logger.V(util.ErrorLevel).Info("failed to write response", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

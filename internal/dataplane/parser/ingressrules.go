@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	networkingv1beta1 "k8s.io/api/networking/v1beta1"
@@ -13,6 +13,7 @@ import (
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/store"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 type ingressRules struct {
@@ -41,7 +42,7 @@ func mergeIngressRules(objs ...ingressRules) ingressRules {
 	return result
 }
 
-func (ir *ingressRules) populateServices(log logrus.FieldLogger, s store.Storer) error {
+func (ir *ingressRules) populateServices(log logr.Logger, s store.Storer) error {
 	// populate Kubernetes Service
 	for key, service := range ir.ServiceNameToServices {
 		if service.K8sServices == nil {
@@ -80,10 +81,10 @@ func (ir *ingressRules) populateServices(log logrus.FieldLogger, s store.Storer)
 						ID: kong.String(string(secret.UID)),
 					}
 				} else {
-					log.WithFields(logrus.Fields{
-						"secret_name":      secretName,
-						"secret_namespace": k8sService.Namespace,
-					}).Errorf("failed to fetch secret: %v", err)
+					log.V(util.ErrorLevel).Info("failed to fetch secret",
+						"secret_namespace", k8sService.Namespace,
+						"secret_name", secretName,
+						"error", err)
 				}
 			}
 		}
@@ -146,7 +147,7 @@ func (m SecretNameToSNIs) filterHosts(hosts []string) []string {
 }
 
 func getK8sServicesForBackends(
-	log logrus.FieldLogger,
+	log logr.Logger,
 	storer store.Storer,
 	namespace string,
 	backends kongstate.ServiceBackends,
@@ -165,10 +166,10 @@ func getK8sServicesForBackends(
 		}
 		k8sService, err := storer.GetService(backendNamespace, backend.Name)
 		if err != nil {
-			log.WithFields(logrus.Fields{
-				"service_name":      backend.PortDef.Name,
-				"service_namespace": backendNamespace,
-			}).Errorf("failed to fetch service: %v", err)
+			log.V(util.ErrorLevel).Info("failed to fetch service",
+				"service_namespace", backendNamespace,
+				"service_name", backend.PortDef.Name,
+				"error", err)
 			continue
 		}
 		if k8sService != nil {
@@ -188,7 +189,7 @@ func getK8sServicesForBackends(
 }
 
 func servicesAllUseTheSameKongAnnotations(
-	log logrus.FieldLogger,
+	log logr.Logger,
 	services []*corev1.Service,
 	annotations map[string]string,
 ) bool {
@@ -205,22 +206,22 @@ func servicesAllUseTheSameKongAnnotations(
 		for k, v := range annotations {
 			valueForThisObject, ok := service.Annotations[k]
 			if !ok {
-				log.WithFields(logrus.Fields{
-					"service_name":      service.Name,
-					"service_namespace": service.Namespace,
-				}).Errorf("in the backend group of %d kubernetes services some have the %s annotation while others don't. "+
+				msg := fmt.Sprintf("in the backend group of %d kubernetes services some have the %s annotation while others don't. "+
 					"this is not supported: when multiple services comprise a backend all kong annotations "+
 					"between them must be set to the same value", len(services), k)
+				log.V(util.ErrorLevel).Info(msg,
+					"service_namespace", service.Namespace,
+					"service_name", service.Name)
 				match = false
 			}
 
 			if valueForThisObject != v {
-				log.WithFields(logrus.Fields{
-					"service_name":      service.Name,
-					"service_namespace": service.Namespace,
-				}).Errorf("the value of annotation %s is different between the %d services which comprise this backend. "+
+				msg := fmt.Sprintf("the value of annotation %s is different between the %d services which comprise this backend. "+
 					"this is not supported: when multiple services comprise a backend all kong annotations "+
 					"between them must be set to the same value", k, len(services))
+				log.V(util.ErrorLevel).Info(msg,
+					"service_namespace", service.Namespace,
+					"service_name", service.Name)
 				match = false
 			}
 		}

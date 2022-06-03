@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
+
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 func TestSynchronizer(t *testing.T) {
@@ -20,7 +21,7 @@ func TestSynchronizer(t *testing.T) {
 
 	t.Log("initializing the dataplane synchronizer")
 	stagger := time.Millisecond * 200
-	sync, err := NewSynchronizerWithStagger(logrus.New(), c, stagger)
+	sync, err := NewSynchronizerWithStagger(util.MakeDefaultLogger(), c, stagger)
 	assert.NoError(t, err)
 	assert.NotNil(t, sync)
 

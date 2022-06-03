@@ -3,7 +3,6 @@ package store
 import (
 	"reflect"
 
-	"github.com/sirupsen/logrus"
 	apiv1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	networkingv1beta1 "k8s.io/api/networking/v1beta1"
@@ -12,6 +11,7 @@ import (
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 	configurationv1 "github.com/kong/kubernetes-ingress-controller/v2/pkg/apis/configuration/v1"
 	configurationv1beta1 "github.com/kong/kubernetes-ingress-controller/v2/pkg/apis/configuration/v1beta1"
 )
@@ -207,7 +207,7 @@ func NewFakeStore(
 		ingressV1Beta1ClassMatching: annotations.ExactClassMatch,
 		ingressV1ClassMatching:      annotations.ExactClassMatch,
 		kongConsumerClassMatching:   annotations.ExactClassMatch,
-		logger:                      logrus.New(),
+		logger:                      util.MakeDefaultLogger(),
 	}
 	return s, nil
 }

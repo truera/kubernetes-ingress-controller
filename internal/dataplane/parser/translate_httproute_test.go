@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +28,7 @@ var httprouteGVK = schema.GroupVersionKind{
 func Test_ingressRulesFromHTTPRoutes(t *testing.T) {
 	fakestore, err := store.NewFakeStore(store.FakeObjects{})
 	assert.NoError(t, err)
-	p := NewParser(logrus.New(), fakestore)
+	p := NewParser(util.MakeDefaultLogger(), fakestore)
 	httpPort := gatewayv1alpha2.PortNumber(80)
 	pathMatchPrefix := gatewayv1alpha2.PathMatchPathPrefix
 	pathMatchRegex := gatewayv1alpha2.PathMatchRegularExpression

@@ -3,7 +3,6 @@ package parser
 import (
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	networkingv1 "k8s.io/api/networking/v1"
 	networkingv1beta1 "k8s.io/api/networking/v1beta1"
@@ -13,6 +12,7 @@ import (
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/store"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 func TestFromIngressV1beta1(t *testing.T) {
@@ -268,7 +268,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			IngressesV1beta1: []*networkingv1beta1.Ingress{},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal(ingressRules{
@@ -283,7 +283,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal(1, len(parsedInfo.ServiceNameToServices))
@@ -298,7 +298,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			IngressesV1beta1: []*networkingv1beta1.Ingress{ingressList[0], ingressList[2]},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal(2, len(parsedInfo.ServiceNameToServices))
@@ -319,7 +319,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal(2, len(parsedInfo.SecretNameToSNIs))
@@ -333,7 +333,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal(1, len(parsedInfo.ServiceNameToServices))
@@ -354,7 +354,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal("/", *parsedInfo.ServiceNameToServices["foo-namespace.foo-svc.80"].Routes[0].Paths[0])
@@ -367,7 +367,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		assert.NotPanics(func() {
 			p.ingressRulesFromIngressV1beta1()
@@ -380,7 +380,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Equal("foo-svc.foo-namespace.80.svc", *parsedInfo.ServiceNameToServices["foo-namespace.foo-svc.80"].Host)
@@ -393,7 +393,7 @@ func TestFromIngressV1beta1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1beta1()
 		assert.Empty(parsedInfo.ServiceNameToServices)
@@ -710,7 +710,7 @@ func TestFromIngressV1(t *testing.T) {
 			IngressesV1: []*networkingv1.Ingress{},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal(ingressRules{
@@ -725,7 +725,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal(1, len(parsedInfo.ServiceNameToServices))
@@ -743,7 +743,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal(2, len(parsedInfo.ServiceNameToServices))
@@ -764,7 +764,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal(2, len(parsedInfo.SecretNameToSNIs))
@@ -778,7 +778,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal(1, len(parsedInfo.ServiceNameToServices))
@@ -799,7 +799,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal("/", *parsedInfo.ServiceNameToServices["foo-namespace.foo-svc.pnum-80"].Routes[0].Paths[0])
@@ -812,7 +812,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		assert.NotPanics(func() {
 			p.ingressRulesFromIngressV1()
@@ -825,7 +825,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Equal("foo-svc.foo-namespace.80.svc",
@@ -840,7 +840,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		assert.Empty(parsedInfo.ServiceNameToServices)
@@ -852,7 +852,7 @@ func TestFromIngressV1(t *testing.T) {
 			},
 		})
 		assert.NoError(err)
-		p := NewParser(logrus.New(), store)
+		p := NewParser(util.MakeDefaultLogger(), store)
 
 		parsedInfo := p.ingressRulesFromIngressV1()
 		_, ok := parsedInfo.ServiceNameToServices["foo-namespace.foo-svc.pname-http"]

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-logr/logr"
 )
 
 var (
@@ -41,7 +41,7 @@ type Reporter struct {
 
 	serializedInfo string
 
-	Logger logrus.FieldLogger
+	Logger logr.Logger
 }
 
 func (r *Reporter) once() {
@@ -94,17 +94,17 @@ func (r *Reporter) send(signal string, uptime int) {
 	conn, err := tls.DialWithDialer(&dialer, "tcp", net.JoinHostPort(reportsHost,
 		strconv.FormatUint(uint64(reportsPort), 10)), &tlsConf)
 	if err != nil {
-		r.Logger.Debugf("failed to connect to reporting server: %s", err)
+		r.Logger.V(DebugLevel).Info("failed to connect to reporting server", "cause", err)
 		return
 	}
 	err = conn.SetDeadline(time.Now().Add(time.Minute))
 	if err != nil {
-		r.Logger.Debugf("failed to set report connection deadline: %s", err)
+		r.Logger.V(DebugLevel).Info("failed to set report connection deadline", "cause", err)
 		return
 	}
 	defer conn.Close()
 	_, err = conn.Write([]byte(message))
 	if err != nil {
-		r.Logger.Debugf("failed to send report: %s", err)
+		r.Logger.V(DebugLevel).Info("failed to send report", "cause", err)
 	}
 }

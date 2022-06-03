@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
@@ -17,7 +16,7 @@ func (p *Parser) ingressRulesFromTCPIngressV1beta1() ingressRules {
 
 	ingressList, err := p.storer.ListTCPIngresses()
 	if err != nil {
-		p.logger.WithError(err).Error("failed to list TCPIngresses")
+		p.logger.V(util.ErrorLevel).Info("failed to list TCPIngresses", "error", err)
 		return result
 	}
 
@@ -29,17 +28,17 @@ func (p *Parser) ingressRulesFromTCPIngressV1beta1() ingressRules {
 	for _, ingress := range ingressList {
 		ingressSpec := ingress.Spec
 
-		log := p.logger.WithFields(logrus.Fields{
-			"tcpingress_namespace": ingress.Namespace,
-			"tcpingress_name":      ingress.Name,
-		})
+		log := p.logger.WithValues(
+			"tcpingress_namespace", ingress.Namespace,
+			"tcpingress_name", ingress.Name,
+		)
 
 		result.SecretNameToSNIs.addFromIngressV1beta1TLS(tcpIngressToNetworkingTLS(ingressSpec.TLS), ingress.Namespace)
 
 		var objectSuccessfullyParsed bool
 		for i, rule := range ingressSpec.Rules {
 			if !util.IsValidPort(rule.Port) {
-				log.Errorf("invalid TCPIngress: invalid port: %v", rule.Port)
+				log.V(util.ErrorLevel).Info("invalid TCPIngress: invalid port", "port", rule.Port)
 				continue
 			}
 			r := kongstate.Route{
@@ -59,11 +58,12 @@ func (p *Parser) ingressRulesFromTCPIngressV1beta1() ingressRules {
 				r.SNIs = kong.StringSlice(host)
 			}
 			if rule.Backend.ServiceName == "" {
-				log.Errorf("invalid TCPIngress: empty serviceName")
+				p.logger.V(util.ErrorLevel).Info("invalid TCPIngress: empty serviceName")
 				continue
 			}
 			if !util.IsValidPort(rule.Backend.ServicePort) {
-				log.Errorf("invalid TCPIngress: invalid servicePort: %v", rule.Backend.ServicePort)
+				log.V(util.ErrorLevel).Info("invalid TCPIngress: invalid servicePort",
+					"servicePort", rule.Backend.ServicePort)
 				continue
 			}
 
@@ -107,7 +107,7 @@ func (p *Parser) ingressRulesFromUDPIngressV1beta1() ingressRules {
 
 	ingressList, err := p.storer.ListUDPIngresses()
 	if err != nil {
-		p.logger.WithError(err).Errorf("failed to list UDPIngresses")
+		p.logger.V(util.ErrorLevel).Info("failed to list UDPIngresses", "error", err)
 		return result
 	}
 
@@ -118,24 +118,25 @@ func (p *Parser) ingressRulesFromUDPIngressV1beta1() ingressRules {
 	for _, ingress := range ingressList {
 		ingressSpec := ingress.Spec
 
-		log := p.logger.WithFields(logrus.Fields{
-			"udpingress_namespace": ingress.Namespace,
-			"udpingress_name":      ingress.Name,
-		})
+		log := p.logger.WithValues(
+			"udpingress_namespace", ingress.Namespace,
+			"udpingress_name", ingress.Name,
+		)
 
 		var objectSuccessfullyParsed bool
 		for i, rule := range ingressSpec.Rules {
 			// validate the ports and servicenames for the rule
 			if !util.IsValidPort(rule.Port) {
-				log.Errorf("invalid UDPIngress: invalid port: %d", rule.Port)
+				log.V(util.ErrorLevel).Info("invalid UDPIngress: invalid port", "port", rule.Port)
 				continue
 			}
 			if rule.Backend.ServiceName == "" {
-				log.Errorf("invalid UDPIngress: empty serviceName")
+				log.V(util.ErrorLevel).Info("invalid UDPIngress: empty serviceName")
 				continue
 			}
 			if !util.IsValidPort(rule.Backend.ServicePort) {
-				log.Errorf("invalid UDPIngress: invalid servicePort: %d", rule.Backend.ServicePort)
+				log.V(util.ErrorLevel).Info("invalid UDPIngress: invalid servicePort",
+					"servicePort", rule.Backend.ServicePort)
 				continue
 			}
 

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kong/go-kong/kong"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
@@ -214,13 +213,13 @@ func TestOverrideRoute(t *testing.T) {
 	}
 
 	for _, testcase := range testTable {
-		testcase.inRoute.override(logrus.New(), &testcase.inKongIngresss)
+		testcase.inRoute.override(util.MakeDefaultLogger(), &testcase.inKongIngresss)
 		assert.Equal(testcase.inRoute, testcase.outRoute)
 	}
 
 	assert.NotPanics(func() {
 		var nilRoute *Route
-		nilRoute.override(logrus.New(), nil)
+		nilRoute.override(util.MakeDefaultLogger(), nil)
 	})
 }
 
@@ -250,7 +249,7 @@ func TestOverrideRoutePriority(t *testing.T) {
 		},
 		Ingress: ingMeta,
 	}
-	route.override(logrus.New(), &kongIngress)
+	route.override(util.MakeDefaultLogger(), &kongIngress)
 	assert.Equal(route.Hosts, kong.StringSlice("foo.com", "bar.com"))
 	assert.Equal(route.Protocols, kong.StringSlice("grpc", "grpcs"))
 }
@@ -268,11 +267,11 @@ func TestOverrideRouteByKongIngress(t *testing.T) {
 		},
 	}
 
-	route.overrideByKongIngress(logrus.New(), &kongIngress)
+	route.overrideByKongIngress(util.MakeDefaultLogger(), &kongIngress)
 	assert.Equal(route.Protocols, kong.StringSlice("http"))
 	assert.NotPanics(func() {
 		var nilRoute *Route
-		nilRoute.override(logrus.New(), nil)
+		nilRoute.override(util.MakeDefaultLogger(), nil)
 	})
 }
 func TestOverrideRouteByAnnotation(t *testing.T) {
@@ -296,13 +295,13 @@ func TestOverrideRouteByAnnotation(t *testing.T) {
 		},
 		Ingress: ingMeta,
 	}
-	route.overrideByAnnotation(logrus.New())
+	route.overrideByAnnotation(util.MakeDefaultLogger())
 	assert.Equal(route.Hosts, kong.StringSlice("foo.com", "bar.com"))
 	assert.Equal(route.Protocols, kong.StringSlice("grpc", "grpcs"))
 
 	assert.NotPanics(func() {
 		var nilRoute *Route
-		nilRoute.override(logrus.New(), nil)
+		nilRoute.override(util.MakeDefaultLogger(), nil)
 	})
 }
 
@@ -785,7 +784,7 @@ func Test_overrideRouteMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.route.overrideMethods(logrus.New(), tt.args.anns)
+			tt.args.route.overrideMethods(util.MakeDefaultLogger(), tt.args.anns)
 			if !reflect.DeepEqual(tt.args.route, tt.want) {
 				t.Errorf("overrideRouteMethods() got = %v, want %v", tt.args.route, tt.want)
 			}
@@ -836,7 +835,7 @@ func Test_overrideRouteSNIs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.route.overrideSNIs(logrus.New(), tt.args.anns)
+			tt.args.route.overrideSNIs(util.MakeDefaultLogger(), tt.args.anns)
 			if !reflect.DeepEqual(tt.args.route, tt.want) {
 				t.Errorf("overrideRouteSNIs() got = %v, want %v", tt.args.route, tt.want)
 			}
@@ -908,7 +907,7 @@ func Test_overrideRequestBuffering(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.route.overrideRequestBuffering(logrus.New(), tt.args.anns)
+			tt.args.route.overrideRequestBuffering(util.MakeDefaultLogger(), tt.args.anns)
 			if !reflect.DeepEqual(tt.args.route.Route, tt.want) {
 				t.Errorf("overrideRequestBuffering() got = %v, want %v", &tt.args.route.Route, tt.want)
 			}
@@ -980,7 +979,7 @@ func Test_overrideResponseBuffering(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.route.overrideResponseBuffering(logrus.New(), tt.args.anns)
+			tt.args.route.overrideResponseBuffering(util.MakeDefaultLogger(), tt.args.anns)
 			if !reflect.DeepEqual(tt.args.route.Route, tt.want) {
 				t.Errorf("overrideResponseBuffering() got = %v, want %v", &tt.args.route.Route, tt.want)
 			}
@@ -1044,7 +1043,7 @@ func Test_overrideHosts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.route.overrideHosts(logrus.New(), tt.args.anns)
+			tt.args.route.overrideHosts(util.MakeDefaultLogger(), tt.args.anns)
 			if !reflect.DeepEqual(tt.args.route, tt.want) {
 				t.Errorf("overrideHosts() got = %v, want %v", tt.args.route, tt.want)
 			}

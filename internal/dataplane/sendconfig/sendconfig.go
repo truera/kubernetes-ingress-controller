@@ -11,16 +11,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/kong/deck/diff"
 	"github.com/kong/deck/dump"
 	"github.com/kong/deck/file"
 	"github.com/kong/deck/state"
 	deckutils "github.com/kong/deck/utils"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/deckgen"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/metrics"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 const initialHash = "00000000000000000000000000000000"
@@ -31,7 +32,7 @@ const initialHash = "00000000000000000000000000000000"
 
 // PerformUpdate writes `targetContent` and `customEntities` to Kong Admin API specified by `kongConfig`.
 func PerformUpdate(ctx context.Context,
-	log logrus.FieldLogger,
+	log logr.Logger,
 	kongConfig *Kong,
 	inMemory bool,
 	reverseSync bool,
@@ -50,22 +51,23 @@ func PerformUpdate(ctx context.Context,
 		// use the previous SHA to determine whether or not to perform an update
 		if equalSHA(oldSHA, newSHA) {
 			if !hasSHAUpdateAlreadyBeenReported(newSHA) {
-				log.Debugf("sha %s has been reported", hex.EncodeToString(newSHA))
+				msg := fmt.Sprintf("sha %s has been reported", hex.EncodeToString(newSHA))
+				log.V(util.DebugLevel).Info(msg)
 			}
 			// we assume ready as not all Kong versions provide their configuration hash, and their readiness state
 			// is always unknown
 			ready := true
 			status, err := kongConfig.Client.Status(ctx)
 			if err != nil {
-				log.WithError(err).Error("checking config status failed")
-				log.Debug("configuration state unknown, skipping sync to kong")
+				log.V(util.ErrorLevel).Info("checking config status failed", "error", err)
+				log.V(util.DebugLevel).Info("configuration state unknown, skipping sync to kong")
 				return oldSHA, nil
 			}
 			if status.ConfigurationHash == initialHash {
 				ready = false
 			}
 			if ready {
-				log.Debug("no configuration change, skipping sync to kong")
+				log.V(util.DebugLevel).Info("no configuration change, skipping sync to kong")
 				return oldSHA, nil
 			}
 		}
@@ -110,7 +112,7 @@ func PerformUpdate(ctx context.Context,
 // Sendconfig - Private Functions
 // -----------------------------------------------------------------------------
 
-func renderConfigWithCustomEntities(log logrus.FieldLogger, state *file.Content,
+func renderConfigWithCustomEntities(log logr.Logger, state *file.Content,
 	customEntitiesJSONBytes []byte) ([]byte, error) {
 
 	var kongCoreConfig []byte
@@ -141,7 +143,8 @@ func renderConfigWithCustomEntities(log logrus.FieldLogger, state *file.Content,
 	err = json.Unmarshal(customEntitiesJSONBytes, &customEntities)
 	if err != nil {
 		// do not error out when custom entities are messed up
-		log.WithError(err).Error("failed to unmarshal custom entities from secret data")
+		log.V(util.ErrorLevel).Info("failed to unmarshal custom entities from secret data",
+			"error", err)
 	} else {
 		for k, v := range customEntities {
 			if _, exists := mergeMap[k]; !exists {
@@ -161,7 +164,7 @@ func renderConfigWithCustomEntities(log logrus.FieldLogger, state *file.Content,
 }
 
 func onUpdateInMemoryMode(ctx context.Context,
-	log logrus.FieldLogger,
+	log logr.Logger,
 	state *file.Content,
 	customEntities []byte,
 	kongConfig *Kong,

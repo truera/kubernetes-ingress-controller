@@ -33,7 +33,7 @@ import (
 
 // Run starts the controller manager and blocks until it exits.
 func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic) error {
-	deprecatedLogger, _, err := setupLoggers(c)
+	logger, err := setupLoggers(c)
 	if err != nil {
 		return err
 	}
@@ -128,13 +128,13 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic) e
 	if err != nil {
 		return fmt.Errorf("%f is not a valid number of seconds to the timeout config for the kong client: %w", c.ProxyTimeoutSeconds, err)
 	}
-	dataplaneClient, err := dataplane.NewKongClient(deprecatedLogger, timeoutDuration, c.IngressClassName, c.EnableReverseSync, c.SkipCACertificates, diagnostic, kongConfig)
+	dataplaneClient, err := dataplane.NewKongClient(logger, timeoutDuration, c.IngressClassName, c.EnableReverseSync, c.SkipCACertificates, diagnostic, kongConfig)
 	if err != nil {
 		return fmt.Errorf("failed to initialize kong data-plane client: %w", err)
 	}
 
 	setupLog.Info("Initializing Dataplane Synchronizer")
-	synchronizer, err := setupDataplaneSynchronizer(setupLog, deprecatedLogger, mgr, dataplaneClient, c)
+	synchronizer, err := setupDataplaneSynchronizer(setupLog, logger, mgr, dataplaneClient, c)
 	if err != nil {
 		return fmt.Errorf("unable to initialize dataplane synchronizer: %w", err)
 	}

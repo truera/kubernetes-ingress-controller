@@ -143,8 +143,9 @@ func (p *Parser) generateKongServiceFromBackendRef(
 			// these, we do not want a single impermissible ref to take the entire rule offline. in the case of edits,
 			// failing the entire rule could potentially delete routes that were previously online and in use, and
 			// that remain viable (because they still have some permissible backendRefs)
-			p.logger.Errorf("%s requested backendRef to %s %s/%s, but no ReferencePolicy permits it, skipping...",
+			msg := fmt.Sprintf("%s requested backendRef to %s %s/%s, but no ReferencePolicy permits it, skipping...",
 				objName, *backendRef.Kind, *backendRef.Namespace, backendRef.Name)
+			p.logger.V(util.ErrorLevel).Info(msg)
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
+// TODO (jrsmroz): Should we provide those verbose levels for all packages?
 // -----------------------------------------------------------------------------
 // Logging Utilities
 // -----------------------------------------------------------------------------

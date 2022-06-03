@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bombsimon/logrusr/v2"
+	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,7 +40,21 @@ import (
 //       testing environments if you're currently reading this and you're considering using it
 //       somewhere that would produce production environment logs: there's significant
 //       performance overhead triggered by the logging hooks this adds.
-func MakeDebugLoggerWithReducedRedudancy(writer io.Writer, formatter logrus.Formatter,
+func MakeDebugLoggerWithReducedRedundancy(writer io.Writer, formatterType string,
+	redudantLogEntryAllowedConsecutively int, redundantLogEntryBackoff time.Duration,
+) logr.Logger {
+	formatter, err := getLogrusFormatter(formatterType)
+	if err != nil {
+		formatter = &logrus.TextFormatter{}
+	}
+
+	lr := makeDebugLoggerWithReducedRedundancy(writer, formatter,
+		redudantLogEntryAllowedConsecutively, redundantLogEntryBackoff)
+
+	return logrusr.New(lr)
+}
+
+func makeDebugLoggerWithReducedRedundancy(writer io.Writer, formatter logrus.Formatter,
 	redudantLogEntryAllowedConsecutively int, redundantLogEntryBackoff time.Duration,
 ) *logrus.Logger {
 	// setup the logger with debug level logging
@@ -53,6 +69,7 @@ func MakeDebugLoggerWithReducedRedudancy(writer io.Writer, formatter logrus.Form
 	// set up the reduced redudancy logging hook
 	log.Hooks.Add(newReducedRedundancyLogHook(
 		redundantLogEntryBackoff, redudantLogEntryAllowedConsecutively, nilFormatter))
+
 	return log
 }
 

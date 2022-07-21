@@ -163,7 +163,7 @@ func TestHTTPSRedirect(t *testing.T) {
 	t.Logf("exposing Service %s via Ingress", service.Name)
 	kubernetesVersion, err := env.Cluster().Version()
 	require.NoError(t, err)
-	ingress := generators.NewIngressForServiceWithClusterVersion(kubernetesVersion, "/httpbin", map[string]string{
+	ingress := generators.NewIngressForServiceWithClusterVersion(kubernetesVersion, "/test_https_redirect", map[string]string{
 		annotations.IngressClassKey:             ingressClass,
 		"konghq.com/protocols":                  "https",
 		"konghq.com/https-redirect-status-code": "301",
@@ -183,7 +183,7 @@ func TestHTTPSRedirect(t *testing.T) {
 		Timeout: time.Second * 3,
 	}
 	assert.Eventually(t, func() bool {
-		resp, err := client.Get(fmt.Sprintf("%s/httpbin", proxyURL))
+		resp, err := client.Get(fmt.Sprintf("%s/test_https_redirect", proxyURL))
 		if err != nil {
 			return false
 		}
@@ -364,6 +364,11 @@ func TestHTTPSIngress(t *testing.T) {
 		return false
 	}, statusWait, waitTick, true)
 
+	success := false
+	var cn string
+	var body string
+	var status int
+
 	t.Log("waiting for routes from Ingress to be operational with expected certificate")
 	assert.Eventually(t, func() bool {
 		resp, err := httpcStatic.Get("https://foo.example:443/foo")
@@ -372,17 +377,25 @@ func TestHTTPSIngress(t *testing.T) {
 			return false
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			b := new(bytes.Buffer)
-			n, err := b.ReadFrom(resp.Body)
-			require.NoError(t, err)
-			require.True(t, n > 0)
-			return strings.Contains(b.String(), "<title>httpbin.org</title>") && resp.TLS.PeerCertificates[0].Subject.CommonName == "secure-foo-bar"
+		b := new(bytes.Buffer)
+		n, err := b.ReadFrom(resp.Body)
+		require.NoError(t, err)
+		require.True(t, n > 0)
+		if strings.Contains(b.String(), "<title>httpbin.org</title>") && resp.TLS.PeerCertificates[0].Subject.CommonName == "secure-foo-bar" && resp.StatusCode == http.StatusOK {
+			success = true
+			return true
 		}
+		cn = resp.TLS.PeerCertificates[0].Subject.CommonName
+		body = b.String()
+		status = resp.StatusCode
 		return false
 	}, ingressWait, waitTick, true)
+	if !success {
+		t.Logf("failed to reach route, last recorded status %v with CN %v and body: %v", status, cn, body)
+	}
 
 	t.Log("waiting for routes from Ingress to be operational with expected certificate")
+	success = false
 	assert.Eventually(t, func() bool {
 		resp, err := httpcStatic.Get("https://bar.example:443/bar")
 		if err != nil {
@@ -390,15 +403,22 @@ func TestHTTPSIngress(t *testing.T) {
 			return false
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			b := new(bytes.Buffer)
-			n, err := b.ReadFrom(resp.Body)
-			require.NoError(t, err)
-			require.True(t, n > 0)
-			return strings.Contains(b.String(), "<title>httpbin.org</title>") && resp.TLS.PeerCertificates[0].Subject.CommonName == "foo.com"
+		b := new(bytes.Buffer)
+		n, err := b.ReadFrom(resp.Body)
+		require.NoError(t, err)
+		require.True(t, n > 0)
+		if strings.Contains(b.String(), "<title>httpbin.org</title>") && resp.TLS.PeerCertificates[0].Subject.CommonName == "foo.com" {
+			success = true
+			return true
 		}
+		cn = resp.TLS.PeerCertificates[0].Subject.CommonName
+		body = b.String()
+		status = resp.StatusCode
 		return false
 	}, ingressWait, waitTick, true)
+	if !success {
+		t.Logf("failed to reach route, last recorded status %v with CN %v and body: %v", status, cn, body)
+	}
 
 	// This should work currently. generators.NewIngressForService() only creates path rules by default, so while we don't
 	// do anything for baz.example other than add fake DNS for it, the /bar still routes it through ingress2's route.

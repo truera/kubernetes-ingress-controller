@@ -209,7 +209,7 @@ NCPU ?= $(shell getconf _NPROCESSORS_ONLN)
 PKG_LIST = ./pkg/...,./internal/...
 KIND_CLUSTER_NAME ?= "integration-tests"
 INTEGRATION_TEST_TIMEOUT ?= "45m"
-E2E_TEST_TIMEOUT ?= "45m"
+E2E_TEST_TIMEOUT ?= "60m"
 KONG_CONTROLLER_FEATURE_GATES ?= GatewayAlpha=true
 GOTESTFMT_CMD ?= $(GOTESTFMT) -hide successful-downloads,empty-packages -showteststatus
 

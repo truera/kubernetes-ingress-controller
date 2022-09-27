@@ -36,6 +36,7 @@ spec:
       containers:
       - name: proxy
         image: kong-placeholder:placeholder # This is replaced by the config/image.yaml component
+        command: ["kong", "start", "--vv"]
         env:
           # servers
         - name: KONG_PROXY_LISTEN
@@ -46,6 +47,8 @@ spec:
           value: 127.0.0.1:8444 ssl
         - name: KONG_STATUS_LISTEN
           value: 0.0.0.0:8100
+        - name: KONG_NGINX_DAEMON
+          value: "on"
           # DB
         - name: KONG_DATABASE
           value: "off"

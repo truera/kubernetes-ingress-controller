@@ -1602,7 +1602,7 @@ spec:
           value: /dev/stderr
         - name: KONG_ROUTER_FLAVOR
           value: traditional
-        image: kong/kong-gateway:3.0
+        image: traines/kong:3.0.0.0-debug
         lifecycle:
           preStop:
             exec:

@@ -4,5 +4,5 @@ patchesStrategicMerge:
 - kong-enterprise.yaml
 images:
 - name: kong
-  newName: kong/kong-gateway
-  newTag: '3.0'
+  newName: traines/kong
+  newTag: '3.0.0.0-debug'

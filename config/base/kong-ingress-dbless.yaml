@@ -57,6 +57,8 @@ spec:
           # logging
         - name: KONG_ADMIN_ACCESS_LOG
           value: /dev/stdout
+        - name: KONG_LOG_LEVEL
+          value: debug
         - name: KONG_ADMIN_ERROR_LOG
           value: /dev/stderr
         # - name: KONG_PROXY_ACCESS_LOG

@@ -1568,11 +1568,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       containers:
-      - command:
-        - kong
-        - start
-        - --vv
-        env:
+      - env:
         - name: KONG_PROXY_LISTEN
           value: 0.0.0.0:8000, 0.0.0.0:8443 ssl http2
         - name: KONG_PORT_MAPS
@@ -1581,8 +1577,6 @@ spec:
           value: 127.0.0.1:8444 ssl
         - name: KONG_STATUS_LISTEN
           value: 0.0.0.0:8100
-        - name: KONG_NGINX_DAEMON
-          value: "on"
         - name: KONG_DATABASE
           value: "off"
         - name: KONG_NGINX_WORKER_PROCESSES

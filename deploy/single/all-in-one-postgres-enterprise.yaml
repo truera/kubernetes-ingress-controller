@@ -1614,11 +1614,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       containers:
-      - command:
-        - kong
-        - start
-        - --vv
-        env:
+      - env:
         - name: KONG_LICENSE_DATA
           valueFrom:
             secretKeyRef:
@@ -1646,8 +1642,6 @@ spec:
           value: 80:8000, 443:8443
         - name: KONG_STATUS_LISTEN
           value: 0.0.0.0:8100
-        - name: KONG_NGINX_DAEMON
-          value: "on"
         - name: KONG_NGINX_WORKER_PROCESSES
           value: "2"
         - name: KONG_KIC

@@ -41,7 +41,7 @@ const (
 
 func TestDeployAllInOneDBLESS(t *testing.T) {
 	t.Log("configuring all-in-one-dbless.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -107,7 +107,7 @@ func TestDeployAndUpgradeAllInOneDBLESS(t *testing.T) {
 	defer oldManifest.Body.Close()
 
 	t.Log("configuring all-in-one-dbless.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -159,7 +159,7 @@ func TestDeployAllInOneEnterpriseDBLESS(t *testing.T) {
 	if os.Getenv(kong.LicenseDataEnvVar) == "" {
 		t.Skipf("no license available to test enterprise: %s was not provided", kong.LicenseDataEnvVar)
 	}
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -215,7 +215,7 @@ const postgresPath = "../../deploy/single/all-in-one-postgres.yaml"
 
 func TestDeployAllInOnePostgres(t *testing.T) {
 	t.Log("configuring all-in-one-postgres.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -256,7 +256,7 @@ func TestDeployAllInOnePostgres(t *testing.T) {
 
 func TestDeployAllInOnePostgresWithMultipleReplicas(t *testing.T) {
 	t.Log("configuring all-in-one-postgres.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -412,7 +412,7 @@ func TestDeployAllInOneEnterprisePostgres(t *testing.T) {
 	if os.Getenv(kong.LicenseDataEnvVar) == "" {
 		t.Skipf("no license available to test enterprise: %s was not provided", kong.LicenseDataEnvVar)
 	}
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

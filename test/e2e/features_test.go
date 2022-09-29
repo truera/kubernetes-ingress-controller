@@ -131,7 +131,7 @@ PMxZ3NvEwhsJgDJ82D7OUR2G7wZtgUj/WFj14XOofpZJmhzTQrtbbuc=
 // test controller instance.
 func TestWebhookUpdate(t *testing.T) {
 	t.Log("configuring all-in-one-dbless.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -297,7 +297,7 @@ func TestWebhookUpdate(t *testing.T) {
 // certificate (all other tests with the controller provide certificates, so that behavior isn't tested otherwise).
 func TestDeployAllInOneDBLESSGateway(t *testing.T) {
 	t.Log("configuring all-in-one-dbless.yaml manifest test for Gateway")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -493,7 +493,7 @@ func TestDeployAllInOneDBLESSGateway(t *testing.T) {
 // https://github.com/Kong/kubernetes-ingress-controller/issues/2001
 func TestDeployAllInOneDBLESSNoLoadBalancer(t *testing.T) {
 	t.Log("configuring all-in-one-dbless.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -563,7 +563,7 @@ func TestDeployAllInOneDBLESSNoLoadBalancer(t *testing.T) {
 // startup.
 func TestDefaultIngressClass(t *testing.T) {
 	t.Log("configuring all-in-one-dbless.yaml manifest test")
-	t.Parallel()
+	//t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

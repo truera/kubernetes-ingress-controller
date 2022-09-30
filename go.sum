@@ -522,6 +522,12 @@ github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930170041-4cdfc7a442
 github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930170041-4cdfc7a4426b/go.mod h1:9ePbedKYeTl2v1tY02M/L7XcW4x1+932u5W44gl9ylc=
 github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930203305-50643df48e07 h1:SvIhz+sO2I8wKnD1ZAv4Szap8iSBx5pJxu1cQXHrGR4=
 github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930203305-50643df48e07/go.mod h1:9ePbedKYeTl2v1tY02M/L7XcW4x1+932u5W44gl9ylc=
+github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930223423-4a05df74cc7c h1:vDtbLB+khn7HKr28+mrtqTw8EGyi/NSe1PY3HWtArr4=
+github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930223423-4a05df74cc7c/go.mod h1:9ePbedKYeTl2v1tY02M/L7XcW4x1+932u5W44gl9ylc=
+github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930232847-baef464b608d h1:1Kr0H+1YzW2TVRQoXxTb+NM9J+I27kHiCUXIVJEngIE=
+github.com/kong/kubernetes-testing-framework v0.22.3-0.20220930232847-baef464b608d/go.mod h1:9ePbedKYeTl2v1tY02M/L7XcW4x1+932u5W44gl9ylc=
+github.com/kong/kubernetes-testing-framework v0.22.3-0.20221001003549-fb9738bd84cc h1:hMj2FuTQpncOlUvR1BV7A5i+etQgaGOM1BUf0euYCsg=
+github.com/kong/kubernetes-testing-framework v0.22.3-0.20221001003549-fb9738bd84cc/go.mod h1:9ePbedKYeTl2v1tY02M/L7XcW4x1+932u5W44gl9ylc=
 github.com/kong/semver/v4 v4.0.1 h1:DIcNR8W3gfx0KabFBADPalxxsp+q/5COwIFkkhrFQ2Y=
 github.com/kong/semver/v4 v4.0.1/go.mod h1:LImQ0oT15pJvSns/hs2laLca2zcYoHu5EsSNY0J6/QA=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=

@@ -6,9 +6,24 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  setup-e2e-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      test_names: ${{ steps.set_test_names.outputs.test_names }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: set_test_names
+        name: Set test names
+        working-directory: test/e2e/
+        # grep magic described in https://unix.stackexchange.com/a/13472
+        run: |
+          echo "::set-output name=test_names::$(grep -shoP "(?<=^func )(Test[a-zA-z_0-9]+)(?=\(t \*testing.T\) {)" * | jq -R . | jq -cs .)"
+      - name: Print test names
+        run: echo "Test names ${{ steps.set_test_names.outputs.test_names }}"
   e2e-tests:
     environment: "Configure ci"
     runs-on: ubuntu-latest
+    needs: setup-e2e-tests
     strategy:
       fail-fast: false
       matrix:
@@ -17,6 +32,8 @@ jobs:
           - 'v1.22.9'
           - 'v1.23.6'
           - 'v1.24.2'
+          - 'v1.25.2'
+        test: ${{ fromJSON(needs.setup-integration-tests.outputs.test_names) }}
     steps:
     - name: setup golang
       uses: actions/setup-go@v3
@@ -42,13 +59,15 @@ jobs:
         # PULP_PASSWORD secret is set in "Configure ci" environment
         password: ${{ secrets.PULP_PASSWORD }}
 
-    - name: run e2e tests
-      run: make test.e2e
+    - name: run ${{ matrix.test }} - ${{ matrix.kubernetes-version }}
+      run: go test -v -race -parallel 1 -timeout 60m ./test/e2e/... -run ${{ matrix.test }}
       env:
+        GOFLAGS: "-tags=e2e_tests"
         TEST_KONG_CONTROLLER_IMAGE_OVERRIDE: "kong/nightly-ingress-controller:nightly"
         KONG_LICENSE_DATA: ${{ steps.license.outputs.license }}
         KONG_CLUSTER_VERSION: ${{ matrix.kubernetes-version }}
         KTF_KIND_DEBUG: 1
+        GOTESTFLAGS: "-json"
         NCPU: 1 # it was found that github actions (specifically) did not seem to perform well when spawning
                 # multiple kind clusters within a single job, so only 1 is allowed at a time.
 

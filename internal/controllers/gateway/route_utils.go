@@ -230,17 +230,6 @@ func listenerHostnameIntersectWithRouteHostnames[H types.HostnameT, L types.List
 
 	// if the listener has no hostname, all hostnames automatically intersect
 	switch l := (interface{})(listener).(type) {
-	case gatewayv1alpha2.Listener:
-		if l.Hostname == nil || *l.Hostname == "" {
-			return true
-		}
-
-		// iterate over all the hostnames and check that at least one intersect with the listener hostname
-		for _, hostname := range hostnames {
-			if util.HostnamesIntersect(*l.Hostname, hostname) {
-				return true
-			}
-		}
 	case Listener:
 		if l.Hostname == nil || *l.Hostname == "" {
 			return true

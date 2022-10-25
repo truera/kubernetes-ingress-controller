@@ -156,7 +156,7 @@ func GetGatewayIsUnlinkedCallback(t *testing.T, c *gatewayclient.Clientset, prot
 }
 
 type routeParentStatusT interface {
-	gatewayv1alpha2.RouteParentStatus | gatewayv1beta1.RouteParentStatus
+	gatewayv1beta1.RouteParentStatus
 }
 
 type routeParents[T routeParentStatusT] struct {
@@ -172,12 +172,6 @@ func newRouteParentsStatus[T routeParentStatusT](parents []T) routeParents[T] {
 func (rp routeParents[T]) check(verifyLinked bool, controllerName string) bool {
 	for _, ps := range rp.parents {
 		switch parentStatus := (interface{})(ps).(type) {
-		case gatewayv1alpha2.RouteParentStatus:
-			if string(parentStatus.ControllerName) == controllerName {
-				// supported Gateway link was found, hence if we want to ensure
-				// the link existence return true
-				return verifyLinked
-			}
 		case gatewayv1beta1.RouteParentStatus:
 			if string(parentStatus.ControllerName) == controllerName {
 				// supported Gateway link was found, hence if we want to ensure

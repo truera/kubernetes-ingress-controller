@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/kong/go-kong/kong"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/deckgen"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/metrics"
@@ -79,7 +82,7 @@ func PerformUpdate(ctx context.Context,
 	timeStart := time.Now()
 	if inMemory {
 		metricsProtocol = metrics.ProtocolDBLess
-		err = onUpdateInMemoryMode(ctx, log, targetContent, customEntities, kongConfig)
+		err, _, _ = onUpdateInMemoryMode(ctx, log, targetContent, customEntities, kongConfig)
 	} else {
 		metricsProtocol = metrics.ProtocolDeck
 		err = onUpdateDBMode(ctx, targetContent, kongConfig, selectorTags, skipCACertificates)
@@ -171,21 +174,23 @@ func onUpdateInMemoryMode(ctx context.Context,
 	state *file.Content,
 	customEntities []byte,
 	kongConfig *Kong,
-) error {
+) (error, []EntityError, error) {
 	// Kong will error out if this is set
 	state.Info = nil
 	// Kong errors out if `null`s are present in `config` of plugins
 	deckgen.CleanUpNullsInPluginConfigs(state)
+	var parseErr error
+	var errorsByEntity []EntityError
 
 	config, err := renderConfigWithCustomEntities(log, state, customEntities)
 	if err != nil {
-		return fmt.Errorf("constructing kong configuration: %w", err)
+		return fmt.Errorf("constructing kong configuration: %w", err), errorsByEntity, parseErr
 	}
 
 	req, err := http.NewRequest("POST", kongConfig.URL+"/config",
 		bytes.NewReader(config))
 	if err != nil {
-		return fmt.Errorf("creating new HTTP request for /config: %w", err)
+		return fmt.Errorf("creating new HTTP request for /config: %w", err), errorsByEntity, parseErr
 	}
 	req.Header.Add("content-type", "application/json")
 
@@ -194,12 +199,118 @@ func onUpdateInMemoryMode(ctx context.Context,
 
 	req.URL.RawQuery = queryString.Encode()
 
-	_, err = kongConfig.Client.Do(ctx, req, nil)
+	response, err := kongConfig.Client.Do(ctx, req, nil)
 	if err != nil {
-		return fmt.Errorf("posting new config to /config: %w", err)
+		errorsByEntity, parseErr = parseEntityErrors(response.Body)
 	}
 
-	return err
+	return err, errorsByEntity, parseErr
+}
+
+type EntityError struct {
+	Name      string
+	Namespace string
+	Kind      string
+	Problems  map[string]string
+}
+
+type EntityErrorRaw struct {
+	Meta     EntityMeta
+	Problems map[string]string
+}
+
+type EntityMeta struct {
+	Name string
+	ID   string
+	Tags []string
+}
+
+func parseEntityErrors(body io.Reader) ([]EntityError, error) {
+	var sections map[string]interface{}
+	var entityErrors []EntityError
+	content, err := io.ReadAll(body)
+	if err != nil {
+		return entityErrors, err
+	}
+
+	err = json.Unmarshal([]byte(gjson.Get(string(content), "fields").Raw), &sections)
+	if err != nil {
+		return entityErrors, err
+	}
+	for entity, section := range sections {
+		if entity == "entity_metadata" {
+			continue
+		}
+		badEntities, ok := section.([]interface{})
+		if !ok {
+			return entityErrors, fmt.Errorf("%s section has unrecognized structure", entity)
+		}
+		for _, entity := range badEntities {
+			problemList, ok := entity.(map[string]interface{})
+			if !ok {
+				if entity == nil {
+					continue
+				}
+				return entityErrors, fmt.Errorf("%s entity has unrecognized structure", entity)
+			}
+			raw := EntityErrorRaw{
+				Meta:     EntityMeta{},
+				Problems: map[string]string{},
+			}
+			for k, v := range problemList {
+				if k == "entity_metadata" {
+					metaRaw, err := json.Marshal(v)
+					if err != nil {
+						return entityErrors, fmt.Errorf("could not marshal %s section metadata: %w", entity, err)
+					}
+					var meta EntityMeta
+					err = json.Unmarshal(metaRaw, &meta)
+					if err != nil {
+						return entityErrors, fmt.Errorf("could not unmarshal %s section metadata: %w", entity, err)
+					}
+					raw.Meta = meta
+				} else {
+					reason, ok := v.(string)
+					if !ok {
+						return entityErrors, fmt.Errorf("%s section %s key is invalid type", entity, k)
+					}
+					raw.Problems[k] = reason
+				}
+			}
+			ee, err := parseEntityError(raw)
+			if err != nil {
+				return entityErrors, fmt.Errorf("could not parse error for %s: %w ", entity, err)
+			}
+			entityErrors = append(entityErrors, ee)
+		}
+	}
+	return entityErrors, nil
+}
+
+func parseEntityError(raw EntityErrorRaw) (EntityError, error) {
+	ee := EntityError{}
+	ee.Problems = raw.Problems
+	for _, tag := range raw.Meta.Tags {
+		if strings.HasPrefix(tag, "k8s-name:") {
+			ee.Name = strings.TrimPrefix(tag, "k8s-name:")
+		}
+		if strings.HasPrefix(tag, "k8s-namespace:") {
+			ee.Namespace = strings.TrimPrefix(tag, "k8s-namespace:")
+		}
+		if strings.HasPrefix(tag, "k8s-kind:") {
+			ee.Kind = strings.TrimPrefix(tag, "k8s-kind:")
+		}
+	}
+	if ee.Name == "" {
+		return ee, fmt.Errorf("no name")
+	}
+	if ee.Namespace == "" {
+		return ee, fmt.Errorf("no namespace")
+	}
+	if ee.Kind == "" {
+		return ee, fmt.Errorf("no kind")
+	}
+	return ee, nil
 }
 
 func onUpdateDBMode(ctx context.Context,

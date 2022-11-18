@@ -1,6 +1,7 @@
 package sendconfig
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -17,6 +18,105 @@ import (
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/metrics"
 )
+
+func TestParseEntityErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    []byte
+		want    []EntityError
+		wantErr bool
+	}{
+		{
+			name: "dunno",
+			want: []EntityError{
+				{
+					Name:      "scallion",
+					Namespace: "default",
+					Kind:      "Ingress",
+					Problems: map[string]string{
+						"methods": "cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'",
+					},
+				},
+				{
+					Name:      "turnip",
+					Namespace: "default",
+					Kind:      "Ingress",
+					Problems: map[string]string{
+						"strip_path": "cannot set 'strip_path' when 'protocols' is 'grpc' or 'grpcs'",
+					},
+				},
+				{
+					Name:      "radish",
+					Namespace: "default",
+					Kind:      "Service",
+					Problems: map[string]string{
+						"read_timeout": "expected an integer",
+					},
+				},
+			},
+			wantErr: false,
+			body: []byte(`{
+    "code": 14,
+    "fields": {
+        "entity_metadata": {},
+        "routes": [
+            null,
+            {
+                "entity_metadata": {
+                    "id": "aeacf6da-6954-45e8-a2a3-470fabcb738f",
+                    "tags": [
+						"k8s-name:scallion",
+						"k8s-namespace:default",
+						"k8s-kind:Ingress"
+                    ]
+                },
+                "methods": "cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'"
+            },
+            {
+                "entity_metadata": {
+                    "id": "d0da7fd2-9f5c-5a9d-81c8-e6463ce7b068",
+                    "name": "default.demo.01",
+                    "tags": [
+						"k8s-name:turnip",
+						"k8s-namespace:default",
+						"k8s-kind:Ingress"
+                    ]
+                },
+                "strip_path": "cannot set 'strip_path' when 'protocols' is 'grpc' or 'grpcs'"
+            }
+        ],
+        "services": [
+            {
+                "entity_metadata": {
+                    "id": "b8aa692c-6d8d-580e-a767-a7dbc1f58344",
+                    "name": "default.echo.pnum-80",
+                    "tags": [
+						"k8s-name:radish",
+						"k8s-namespace:default",
+						"k8s-kind:Service"
+                    ]
+                },
+                "read_timeout": "expected an integer"
+            }
+        ]
+    },
+    "message": "declarative config is invalid: {entity_metadata={},routes={[2]={entity_metadata={id=\"aeacf6da-6954-45e8-a2a3-470fabcb738f\",tags={\"big-bad-tag\"}},methods=\"cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'\"},[3]={entity_metadata={id=\"d0da7fd2-9f5c-5a9d-81c8-e6463ce7b068\",name=\"default.demo.01\"},strip_path=\"cannot set 'strip_path' when 'protocols' is 'grpc' or 'grpcs'\"}},services={{entity_metadata={id=\"b8aa692c-6d8d-580e-a767-a7dbc1f58344\",name=\"default.echo.pnum-80\"},read_timeout=\"expected an integer\"}}}",
+    "name": "invalid declarative configuration"
+}
+`),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseEntityErrors(bytes.NewBuffer(tt.body))
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseEntityErrors() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			require.Equal(t, got, tt.want)
+		})
+	}
+}
 
 func TestRenderConfigWithCustomEntities(t *testing.T) {
 	type args struct {

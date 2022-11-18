@@ -255,6 +255,11 @@ func (p *Parser) ingressRulesFromIngressV1() ingressRules {
 							RegexPriority:     kong.Int(priorityForPath[*rulePath.PathType]),
 							RequestBuffering:  kong.Bool(true),
 							ResponseBuffering: kong.Bool(true),
+							Tags: kong.StringSlice(
+								fmt.Sprintf("k8s-name:%s", ingress.ObjectMeta.Name),
+								fmt.Sprintf("k8s-namespace:%s", ingress.ObjectMeta.Namespace),
+								fmt.Sprintf("k8s-kind:%s", ingress.TypeMeta.Kind),
+							),
 						},
 					}
 					if rule.Host != "" {

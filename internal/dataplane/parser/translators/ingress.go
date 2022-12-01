@@ -210,6 +210,14 @@ func (m *ingressTranslationMeta) translateIntoKongRoutes() *kongstate.Route {
 			RegexPriority:     kong.Int(0),
 			RequestBuffering:  kong.Bool(true),
 			ResponseBuffering: kong.Bool(true),
+			Tags: kong.StringSlice(
+				fmt.Sprintf("k8s-name:%s", m.ingressName),
+				fmt.Sprintf("k8s-namespace:%s", m.ingressNamespace),
+				// TODO using values off the object feels cleaner for this, but we're already using hard-coded values
+				// above, so maybe vov?
+				fmt.Sprintf("k8s-kind:%s", "Ingress"),
+				//fmt.Sprintf("k8s-apiversion:%s", netv1.SchemeGroupVersion.String()),
+			),
 		},
 	}
 

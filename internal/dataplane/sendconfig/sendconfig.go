@@ -233,7 +233,7 @@ func onUpdateInMemoryMode(ctx context.Context,
 	_, err = kongConfig.Client.Do(ctx, req, nil)
 	if err != nil {
 		if apiError, ok := err.(*kong.APIError); ok {
-			errorsByEntity, parseErr = parseEntityErrors(apiError.Raw())
+			errorsByEntity, parseErr = parseEntityErrors(apiError.Raw(), log)
 		}
 	}
 
@@ -259,63 +259,142 @@ type EntityMeta struct {
 	Tags []string
 }
 
-func parseEntityErrors(body []byte) ([]EntityError, error) {
+func parseEntityErrors(body []byte, log logrus.FieldLogger) ([]EntityError, error) {
 	var sections map[string]interface{}
 	var entityErrors []EntityError
 
+	// "fields" is the top-level key that contains the expanded JSON sections of validation errors
 	err := json.Unmarshal([]byte(gjson.Get(string(body), "fields").Raw), &sections)
 	if err != nil {
 		return entityErrors, err
 	}
+	// top-level keys under "fields" are "route", "service", etc.--Kong entity types
 	for entity, section := range sections {
+		// TODO obsolete with proper exclusion of empty metas, correct?
 		if entity == "entity_metadata" {
 			continue
 		}
+		// the value of the entity type keys are arrays of objects with problems
 		badEntities, ok := section.([]interface{})
 		if !ok {
 			return entityErrors, fmt.Errorf("%s section has unrecognized structure", entity)
 		}
-		for _, entity := range badEntities {
-			problemList, ok := entity.(map[string]interface{})
-			if !ok {
-				if entity == nil {
-					continue
-				}
-				return entityErrors, fmt.Errorf("%s entity has unrecognized structure", entity)
-			}
-			raw := EntityErrorRaw{
-				Meta:     EntityMeta{},
-				Problems: map[string]string{},
-			}
-			for k, v := range problemList {
-				if k == "entity_metadata" {
-					metaRaw, err := json.Marshal(v)
-					if err != nil {
-						return entityErrors, fmt.Errorf("could not marshal %s section metadata: %w", entity, err)
-					}
-					var meta EntityMeta
-					err = json.Unmarshal(metaRaw, &meta)
-					if err != nil {
-						return entityErrors, fmt.Errorf("could not unmarshal %s section metadata: %w", entity, err)
-					}
-					raw.Meta = meta
-				} else {
-					// TODO if there's a nested structure, which there will be, this may be another block of entities,
-					// in which case this needs to recurse into casting it as badEntities, ok := section.([]interface{})
-					// and running the for _, entity := range badEntities loop
-					reason, ok := v.(string)
-					if !ok {
-						return entityErrors, fmt.Errorf("%s section %s key is invalid type", entity, k)
-					}
-					raw.Problems[k] = reason
-				}
-			}
-			ee, err := parseEntityError(raw)
-			if err != nil {
-				return entityErrors, fmt.Errorf("could not parse error for %s: %w ", entity, err)
-			}
-			entityErrors = append(entityErrors, ee)
+		ee, err := parseEntityList(badEntities, log)
+		if err != nil {
+			return entityErrors, err
 		}
+		entityErrors = append(entityErrors, ee...)
+		//for _, entity := range badEntities {
+		//	// individual objects contain a key->value map. keys can be one of:
+		//	// - the entity meta object
+		//	// - a field name and its validation failure
+		//	// - a NESTED list of entities with issues, e.g. if you define routes under services in input, you will get
+		//	// a "routes" key here, whose value is another entity
+		//	//
+		//	// these can all apear under the same entity. a service with a bad field and a route with a bad field
+		//	// defined under it will have both a field+validation key AND a nested entity list "routes" key
+		//	problemList, ok := entity.(map[string]interface{})
+		//	if !ok {
+		//		if entity == nil {
+		//			continue
+		//		}
+		//		return entityErrors, fmt.Errorf("%s entity has unrecognized structure", entity)
+		//	}
+		//	raw := EntityErrorRaw{
+		//		Meta:     EntityMeta{},
+		//		Problems: map[string]string{},
+		//	}
+		//	for k, v := range problemList {
+		//		if k == "entity_metadata" {
+		//			metaRaw, err := json.Marshal(v)
+		//			if err != nil {
+		//				return entityErrors, fmt.Errorf("could not marshal %s section metadata: %w", entity, err)
+		//			}
+		//			var meta EntityMeta
+		//			err = json.Unmarshal(metaRaw, &meta)
+		//			if err != nil {
+		//				return entityErrors, fmt.Errorf("could not unmarshal %s section metadata: %w", entity, err)
+		//			}
+		//			raw.Meta = meta
+		//		} else {
+		//			// TODO if there's a nested structure, which there will be, this may be another block of entities,
+		//			// in which case this needs to recurse into casting it as badEntities, ok := section.([]interface{})
+		//			// and running the for _, entity := range badEntities loop
+		//			reason, ok := v.(string)
+		//			if !ok {
+		//				return entityErrors, fmt.Errorf("%s section %s key is invalid type", entity, k)
+		//			}
+		//			raw.Problems[k] = reason
+		//		}
+		//	}
+		//	ee, err := parseEntityError(raw)
+		//	if err != nil {
+		//		return entityErrors, fmt.Errorf("could not parse error for %s: %w ", entity, err)
+		//	}
+		//	entityErrors = append(entityErrors, ee)
+		//}
+	}
+	return entityErrors, nil
+}
+
+func parseEntityList(entities []interface{}, log logrus.FieldLogger) ([]EntityError, error) {
+	var entityErrors []EntityError
+	for _, entity := range entities {
+		// individual objects contain a key->value map. keys can be one of:
+		// - the entity meta object
+		// - a field name and its validation failure
+		// - a NESTED list of entities with issues, e.g. if you define routes under services in input, you will get
+		// a "routes" key here, whose value is another entity
+		//
+		// these can all apear under the same entity. a service with a bad field and a route with a bad field
+		// defined under it will have both a field+validation key AND a nested entity list "routes" key
+		objects, ok := entity.(map[string]interface{})
+		if !ok {
+			if entity == nil {
+				continue
+			}
+			return entityErrors, fmt.Errorf("%s entity has unrecognized structure", entity)
+		}
+		raw := EntityErrorRaw{
+			Meta:     EntityMeta{},
+			Problems: map[string]string{},
+		}
+		for k, v := range objects {
+			switch t := v.(type) {
+			// fields with issues are "fieldname": "problem description"
+			case string:
+				raw.Problems[k] = t
+			// nested entities are mixed-type arrays, any of metadata, field errors, or nested entities
+			case []interface{}:
+				ee, err := parseEntityList(t, log)
+				if err != nil {
+					return entityErrors, fmt.Errorf("TODO couldnt parse sub list: %w", err)
+				}
+				entityErrors = append(entityErrors, ee...)
+			// metadata is a string map
+			case map[string]interface{}:
+				if k != "entity_metadata" {
+					return entityErrors, fmt.Errorf("TODO map not meta")
+				}
+				metaRaw, err := json.Marshal(t)
+				if err != nil {
+					return entityErrors, fmt.Errorf("could not marshal %s section metadata: %w", entity, err)
+				}
+				var meta EntityMeta
+				err = json.Unmarshal(metaRaw, &meta)
+				if err != nil {
+					return entityErrors, fmt.Errorf("could not unmarshal %s section metadata: %w", entity, err)
+				}
+				raw.Meta = meta
+			default:
+				return entityErrors, fmt.Errorf("%s section %s key is invalid type", entity, k)
+			}
+		}
+		ee, err := parseEntityError(raw)
+		if err != nil {
+			log.Info("TODO entity does not have parseable error, maybe only container?")
+		}
+		entityErrors = append(entityErrors, ee)
 	}
 	return entityErrors, nil
 }
@@ -347,6 +426,10 @@ func parseEntityError(raw EntityErrorRaw) (EntityError, error) {
 	if ee.Kind == "" {
 		return ee, fmt.Errorf("no kind")
 	}
+	// TODO
+	//if ee.APIVersion == "" {
+	//	return ee, fmt.Errorf("no API version")
+	//}
 	return ee, nil
 }
 

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"reflect"
@@ -24,8 +23,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/deckgen"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/parser"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/metrics"
 )
 
@@ -47,10 +48,10 @@ func PerformUpdate(ctx context.Context,
 	customEntities []byte,
 	oldSHA []byte,
 	promMetrics *metrics.CtrlFuncMetrics,
-) ([]byte, error) {
+) ([]byte, error, []parser.TranslationFailure) {
 	newSHA, err := deckgen.GenerateSHA(targetContent, customEntities)
 	if err != nil {
-		return oldSHA, err
+		return oldSHA, err, []parser.TranslationFailure{}
 	}
 	// disable optimization if reverse sync is enabled
 	if !reverseSync {
@@ -66,23 +67,25 @@ func PerformUpdate(ctx context.Context,
 			if err != nil {
 				log.WithError(err).Error("checking config status failed")
 				log.Debug("configuration state unknown, skipping sync to kong")
-				return oldSHA, nil
+				return oldSHA, nil, []parser.TranslationFailure{}
 			}
 			if status.ConfigurationHash == initialHash {
 				ready = false
 			}
 			if ready {
 				log.Debug("no configuration change, skipping sync to kong")
-				return oldSHA, nil
+				return oldSHA, nil, []parser.TranslationFailure{}
 			}
 		}
 	}
 
 	var metricsProtocol string
 	timeStart := time.Now()
+	var errParseErr error
+	var entityErrors []EntityError
 	if inMemory {
 		metricsProtocol = metrics.ProtocolDBLess
-		err, _, _ = onUpdateInMemoryMode(ctx, log, targetContent, customEntities, kongConfig)
+		err, entityErrors, errParseErr = onUpdateInMemoryMode(ctx, log, targetContent, customEntities, kongConfig)
 	} else {
 		metricsProtocol = metrics.ProtocolDeck
 		err = onUpdateDBMode(ctx, targetContent, kongConfig, selectorTags, skipCACertificates)
@@ -90,6 +93,34 @@ func PerformUpdate(ctx context.Context,
 	timeEnd := time.Now()
 
 	if err != nil {
+		// TODO the collector model doesn't make much sense here since we generate all errors in one go and then toss
+		// the instance--no immediate need to retain it, but you could. having it in parser is also a bit awkward, it
+		// needs its own package. the translation name is no longer correct either
+		failuresCollector, tfcErr := parser.NewTranslationFailuresCollector(log)
+		if errParseErr != nil {
+			log.WithError(errParseErr).Error("could not parse error response from Kong")
+		} else {
+			if tfcErr != nil {
+				log.WithError(errParseErr).Error("could not parse error response from Kong")
+			}
+			for _, ee := range entityErrors {
+				obj := metav1.PartialObjectMetadata{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       ee.Kind,
+						APIVersion: ee.APIVersion,
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ee.Namespace,
+						Name:      ee.Name,
+					},
+				}
+				for field, problem := range ee.Problems {
+					failuresCollector.PushTranslationFailure(fmt.Sprintf("invalid %s: %s", field, problem), &obj)
+					log.Info(fmt.Sprintf("adding failure for %s: %s = %s", ee.Name, field, problem)) // TODO remove
+				}
+			}
+		}
+
 		promMetrics.ConfigPushCount.With(prometheus.Labels{
 			metrics.SuccessKey:       metrics.SuccessFalse,
 			metrics.ProtocolKey:      metricsProtocol,
@@ -99,7 +130,7 @@ func PerformUpdate(ctx context.Context,
 			metrics.SuccessKey:  metrics.SuccessFalse,
 			metrics.ProtocolKey: metricsProtocol,
 		}).Observe(float64(timeEnd.Sub(timeStart).Milliseconds()))
-		return nil, err
+		return nil, err, failuresCollector.PopTranslationFailures()
 	}
 
 	promMetrics.ConfigPushCount.With(prometheus.Labels{
@@ -112,7 +143,7 @@ func PerformUpdate(ctx context.Context,
 		metrics.ProtocolKey: metricsProtocol,
 	}).Observe(float64(timeEnd.Sub(timeStart).Milliseconds()))
 	log.Info("successfully synced configuration to kong.")
-	return newSHA, nil
+	return newSHA, nil, []parser.TranslationFailure{}
 }
 
 // -----------------------------------------------------------------------------
@@ -199,19 +230,22 @@ func onUpdateInMemoryMode(ctx context.Context,
 
 	req.URL.RawQuery = queryString.Encode()
 
-	response, err := kongConfig.Client.Do(ctx, req, nil)
+	_, err = kongConfig.Client.Do(ctx, req, nil)
 	if err != nil {
-		errorsByEntity, parseErr = parseEntityErrors(response.Body)
+		if apiError, ok := err.(*kong.APIError); ok {
+			errorsByEntity, parseErr = parseEntityErrors(apiError.Raw())
+		}
 	}
 
 	return err, errorsByEntity, parseErr
 }
 
 type EntityError struct {
-	Name      string
-	Namespace string
-	Kind      string
-	Problems  map[string]string
+	Name       string
+	Namespace  string
+	Kind       string
+	APIVersion string
+	Problems   map[string]string
 }
 
 type EntityErrorRaw struct {
@@ -225,15 +259,11 @@ type EntityMeta struct {
 	Tags []string
 }
 
-func parseEntityErrors(body io.Reader) ([]EntityError, error) {
+func parseEntityErrors(body []byte) ([]EntityError, error) {
 	var sections map[string]interface{}
 	var entityErrors []EntityError
-	content, err := io.ReadAll(body)
-	if err != nil {
-		return entityErrors, err
-	}
 
-	err = json.Unmarshal([]byte(gjson.Get(string(content), "fields").Raw), &sections)
+	err := json.Unmarshal([]byte(gjson.Get(string(body), "fields").Raw), &sections)
 	if err != nil {
 		return entityErrors, err
 	}
@@ -270,6 +300,9 @@ func parseEntityErrors(body io.Reader) ([]EntityError, error) {
 					}
 					raw.Meta = meta
 				} else {
+					// TODO if there's a nested structure, which there will be, this may be another block of entities,
+					// in which case this needs to recurse into casting it as badEntities, ok := section.([]interface{})
+					// and running the for _, entity := range badEntities loop
 					reason, ok := v.(string)
 					if !ok {
 						return entityErrors, fmt.Errorf("%s section %s key is invalid type", entity, k)
@@ -291,6 +324,7 @@ func parseEntityError(raw EntityErrorRaw) (EntityError, error) {
 	ee := EntityError{}
 	ee.Problems = raw.Problems
 	for _, tag := range raw.Meta.Tags {
+		// TODO constants
 		if strings.HasPrefix(tag, "k8s-name:") {
 			ee.Name = strings.TrimPrefix(tag, "k8s-name:")
 		}
@@ -299,6 +333,9 @@ func parseEntityError(raw EntityErrorRaw) (EntityError, error) {
 		}
 		if strings.HasPrefix(tag, "k8s-kind:") {
 			ee.Kind = strings.TrimPrefix(tag, "k8s-kind:")
+		}
+		if strings.HasPrefix(tag, "k8s-apiversion:") {
+			ee.APIVersion = strings.TrimPrefix(tag, "k8s-apiversion:")
 		}
 	}
 	if ee.Name == "" {

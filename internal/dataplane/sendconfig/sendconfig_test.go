@@ -1,7 +1,6 @@
 package sendconfig
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -105,10 +104,11 @@ func TestParseEntityErrors(t *testing.T) {
 }
 `),
 		},
+		// TODO nested entities arrgh
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseEntityErrors(bytes.NewBuffer(tt.body))
+			got, err := parseEntityErrors(tt.body)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseEntityErrors() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -238,7 +238,7 @@ func TestUpdateReportingUtilities(t *testing.T) {
 }
 
 func TestPushFailureReason(t *testing.T) {
-	apiConflictErr := kong.NewAPIError(http.StatusConflict, "conflict api error")
+	apiConflictErr := kong.NewAPIError(http.StatusConflict, "conflict api error", []byte{})
 	networkErr := net.UnknownNetworkError("network error")
 	genericError := errors.New("generic error")
 

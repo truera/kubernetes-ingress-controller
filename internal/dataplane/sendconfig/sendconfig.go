@@ -284,55 +284,6 @@ func parseEntityErrors(body []byte, log logrus.FieldLogger) ([]EntityError, erro
 			return entityErrors, err
 		}
 		entityErrors = append(entityErrors, ee...)
-		//for _, entity := range badEntities {
-		//	// individual objects contain a key->value map. keys can be one of:
-		//	// - the entity meta object
-		//	// - a field name and its validation failure
-		//	// - a NESTED list of entities with issues, e.g. if you define routes under services in input, you will get
-		//	// a "routes" key here, whose value is another entity
-		//	//
-		//	// these can all apear under the same entity. a service with a bad field and a route with a bad field
-		//	// defined under it will have both a field+validation key AND a nested entity list "routes" key
-		//	problemList, ok := entity.(map[string]interface{})
-		//	if !ok {
-		//		if entity == nil {
-		//			continue
-		//		}
-		//		return entityErrors, fmt.Errorf("%s entity has unrecognized structure", entity)
-		//	}
-		//	raw := EntityErrorRaw{
-		//		Meta:     EntityMeta{},
-		//		Problems: map[string]string{},
-		//	}
-		//	for k, v := range problemList {
-		//		if k == "entity_metadata" {
-		//			metaRaw, err := json.Marshal(v)
-		//			if err != nil {
-		//				return entityErrors, fmt.Errorf("could not marshal %s section metadata: %w", entity, err)
-		//			}
-		//			var meta EntityMeta
-		//			err = json.Unmarshal(metaRaw, &meta)
-		//			if err != nil {
-		//				return entityErrors, fmt.Errorf("could not unmarshal %s section metadata: %w", entity, err)
-		//			}
-		//			raw.Meta = meta
-		//		} else {
-		//			// TODO if there's a nested structure, which there will be, this may be another block of entities,
-		//			// in which case this needs to recurse into casting it as badEntities, ok := section.([]interface{})
-		//			// and running the for _, entity := range badEntities loop
-		//			reason, ok := v.(string)
-		//			if !ok {
-		//				return entityErrors, fmt.Errorf("%s section %s key is invalid type", entity, k)
-		//			}
-		//			raw.Problems[k] = reason
-		//		}
-		//	}
-		//	ee, err := parseEntityError(raw)
-		//	if err != nil {
-		//		return entityErrors, fmt.Errorf("could not parse error for %s: %w ", entity, err)
-		//	}
-		//	entityErrors = append(entityErrors, ee)
-		//}
 	}
 	return entityErrors, nil
 }

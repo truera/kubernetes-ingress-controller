@@ -108,9 +108,139 @@ func TestParseEntityErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseEntityErrors(tt.body)
+			got, err := parseEntityErrors(tt.body, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseEntityErrors() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			require.Equal(t, got, tt.want)
+		})
+	}
+}
+
+func TestParseFlatEntityErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    []byte
+		want    []EntityError
+		wantErr bool
+	}{
+		{
+			name: "dunno",
+			want: []EntityError{
+				{
+					Name:      "scallion",
+					Namespace: "default",
+					Kind:      "Ingress",
+					Problems: map[string]string{
+						"methods": "cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'",
+					},
+				},
+				{
+					Name:      "turnip",
+					Namespace: "default",
+					Kind:      "Ingress",
+					Problems: map[string]string{
+						"methods[0]": "expected a string",
+						"methods[1]": "expected a string",
+					},
+				},
+				{
+					Name:      "radish",
+					Namespace: "default",
+					Kind:      "Service",
+					Problems: map[string]string{
+						"read_timeout":  "expected an integer",
+						"write_timeout": "expected an integer",
+					},
+				},
+			},
+			wantErr: false,
+			body: []byte(`{
+    "code": 14,
+    "fields": {
+        "flattened": [
+            {
+                "entity_id": "d7300db1-14eb-5a09-b594-2db904ed8eca",
+                "entity_name": "default.demo.00",
+                "entity_tags": [
+                    "k8s-name:scallion",
+                    "k8s-namespace:default",
+                    "k8s-kind:Ingress"
+                ],
+                "errors": [
+                    {
+                        "field": "methods",
+                        "message": "cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'"
+                    }
+                ]
+            },
+            {
+                "entity_id": "d7300db1-14eb-5a09-b594-2db904ed8eca",
+                "entity_name": "default.demo.01",
+                "entity_tags": [
+                    "k8s-name:turnip",
+                    "k8s-namespace:default",
+                    "k8s-kind:Ingress"
+                ],
+                "errors": [
+                    {
+                        "field": "methods",
+                        "messages": [
+                            "expected a string",
+                            "expected a string"
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_id": "b8aa692c-6d8d-580e-a767-a7dbc1f58344",
+                "entity_name": "default.echo.pnum-80",
+                "entity_tags": [
+                    "k8s-name:radish",
+                    "k8s-namespace:default",
+                    "k8s-kind:Service"
+                ],
+                "errors": [
+                    {
+                        "field": "write_timeout",
+                        "message": "expected an integer"
+                    },
+                    {
+                        "field": "read_timeout",
+                        "message": "expected an integer"
+                    }
+                ]
+            }
+        ],
+        "services": [
+            {
+                "read_timeout": "expected an integer",
+                "routes": [
+                    {
+                        "methods": "cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'"
+                    },
+                    {
+                        "methods": [
+                            "expected a string",
+                            "expected a string"
+                        ]
+                    }
+                ],
+                "write_timeout": "expected an integer"
+            }
+        ]
+    },
+    "message": "declarative config is invalid: {services={{read_timeout=\"expected an integer\",routes={{methods=\"cannot set 'methods' when 'protocols' is 'grpc' or 'grpcs'\"},{methods={\"expected a string\",\"expected a string\"}}},write_timeout=\"expected an integer\"}}}",
+    "name": "invalid declarative configuration"
+}`),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseFlatEntityErrors(tt.body, nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseFlatEntityErrors() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			require.Equal(t, got, tt.want)

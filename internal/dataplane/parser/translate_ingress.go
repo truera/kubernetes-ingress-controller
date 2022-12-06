@@ -259,6 +259,7 @@ func (p *Parser) ingressRulesFromIngressV1() ingressRules {
 								fmt.Sprintf("k8s-name:%s", ingress.ObjectMeta.Name),
 								fmt.Sprintf("k8s-namespace:%s", ingress.ObjectMeta.Namespace),
 								fmt.Sprintf("k8s-kind:%s", ingress.TypeMeta.Kind),
+								fmt.Sprintf("k8s-uid:%s", ingress.ObjectMeta.UID),
 								//fmt.Sprintf("k8s-apiversion:%s", ingress.TypeMeta.APIVersion),
 							),
 						},

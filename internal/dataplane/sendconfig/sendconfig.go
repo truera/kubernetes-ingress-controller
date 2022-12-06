@@ -24,6 +24,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/deckgen"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/parser"
@@ -112,9 +113,14 @@ func PerformUpdate(ctx context.Context,
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: ee.Namespace,
 						Name:      ee.Name,
+						UID:       types.UID(ee.UID),
 					},
 				}
 				for field, problem := range ee.Problems {
+					// TODO this object is incomplete and therefore breaks events a bit. they'll show up in the event
+					// list with short fields populated, but won't appear in "describe resource" output. this requires
+					// the UID in the reference, so we either need to get the object using the info given or store
+					// the UID in tags.
 					failuresCollector.PushTranslationFailure(fmt.Sprintf("invalid %s: %s", field, problem), &obj)
 					log.Info(fmt.Sprintf("adding failure for %s: %s = %s", ee.Name, field, problem)) // TODO remove
 				}
@@ -233,7 +239,7 @@ func onUpdateInMemoryMode(ctx context.Context,
 	_, err = kongConfig.Client.Do(ctx, req, nil)
 	if err != nil {
 		if apiError, ok := err.(*kong.APIError); ok {
-			errorsByEntity, parseErr = parseEntityErrors(apiError.Raw(), log)
+			errorsByEntity, parseErr = parseFlatEntityErrors(apiError.Raw(), log)
 		}
 	}
 
@@ -245,6 +251,7 @@ type EntityError struct {
 	Namespace  string
 	Kind       string
 	APIVersion string
+	UID        string
 	Problems   map[string]string
 }
 
@@ -284,6 +291,70 @@ func parseEntityErrors(body []byte, log logrus.FieldLogger) ([]EntityError, erro
 			return entityErrors, err
 		}
 		entityErrors = append(entityErrors, ee...)
+	}
+	return entityErrors, nil
+}
+
+type ConfigError struct {
+	Code   int               `json:"code,omitempty" yaml:"code,omitempty"`
+	Fields ConfigErrorFields `json:"fields,omitempty" yaml:"fields,omitempty"`
+}
+
+type ConfigErrorFields struct {
+	Flattened []FlatEntityError `json:"flattened,omitempty" yaml:"flattened,omitempty"`
+	Message   string            `json:"message,omitempty" yaml:"message,omitempty"`
+	Name      string            `json:"name,omitempty" yaml:"name,omitempty"`
+}
+
+type FlatEntityError struct {
+	Name   string           `json:"entity_name,omitempty" yaml:"entity_name,omitempty"`
+	ID     string           `json:"entity_id,omitempty" yaml:"entity_id,omitempty"`
+	Tags   []string         `json:"entity_tags,omitempty" yaml:"entity_tags,omitempty"`
+	Errors []FlatFieldError `json:"errors,omitempty" yaml:"errors,omitempty"`
+}
+
+type FlatFieldError struct {
+	Field    string   `json:"field,omitempty" yaml:"field,omitempty"`
+	Message  string   `json:"message,omitempty" yaml:"message,omitempty"`
+	Messages []string `json:"messages,omitempty" yaml:"messages,omitempty"`
+}
+
+func parseFlatEntityErrors(body []byte, log logrus.FieldLogger) ([]EntityError, error) {
+	var entityErrors []EntityError
+	var configError ConfigError
+	err := json.Unmarshal(body, &configError)
+	if err != nil {
+		return entityErrors, fmt.Errorf("could not unmarshal config error: %w", err)
+	}
+	for _, ee := range configError.Fields.Flattened {
+		raw := EntityErrorRaw{
+			Meta: EntityMeta{
+				Name: ee.Name,
+				ID:   ee.ID,
+				Tags: ee.Tags,
+			},
+			Problems: map[string]string{},
+		}
+		for _, p := range ee.Errors {
+			if len(p.Message) > 0 && len(p.Messages) > 0 {
+				return entityErrors, fmt.Errorf("entity %s has both single and array errors for field %s", ee.Name, p.Field)
+			}
+			if len(p.Message) > 0 {
+				raw.Problems[p.Field] = p.Message
+			}
+			if len(p.Messages) > 0 {
+				for i, message := range p.Messages {
+					if len(message) > 0 { // TODO how are the nulls treated?
+						raw.Problems[fmt.Sprintf("%s[%d]", p.Field, i)] = message
+					}
+				}
+			}
+		}
+		parsed, err := parseEntityError(raw)
+		if err != nil {
+			return entityErrors, fmt.Errorf("could not parse entity %s: %w", ee.Name, err)
+		}
+		entityErrors = append(entityErrors, parsed)
 	}
 	return entityErrors, nil
 }
@@ -366,6 +437,9 @@ func parseEntityError(raw EntityErrorRaw) (EntityError, error) {
 		}
 		if strings.HasPrefix(tag, "k8s-apiversion:") {
 			ee.APIVersion = strings.TrimPrefix(tag, "k8s-apiversion:")
+		}
+		if strings.HasPrefix(tag, "k8s-uid:") {
+			ee.UID = strings.TrimPrefix(tag, "k8s-uid:")
 		}
 	}
 	if ee.Name == "" {

@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/adminapi"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane"
@@ -22,16 +20,9 @@ const (
 	DefaultRefreshNodePeriod = 60 * time.Second
 )
 
-// GatewayInstance is a controlled kong gateway instance.
-// its hostname and version will be used to update status of nodes corresponding to the instance in konnect.
-type GatewayInstance struct {
-	hostname string
-	version  string
-}
-
-// GatewayInstanceGetter is the interface to get currently running gateway instances in the kubernetes cluster.
-type GatewayInstanceGetter interface {
-	GetGatewayInstances() ([]GatewayInstance, error)
+type GatewayClientsProvider interface {
+	GatewayClients() []*adminapi.Client
+	SubscribeToGatewayClientsChanges() (<-chan struct{}, bool)
 }
 
 // NodeAgent gets the running status of KIC node and controlled kong gateway nodes,
@@ -47,8 +38,7 @@ type NodeAgent struct {
 
 	configStatus           atomic.Uint32
 	configStatusSubscriber dataplane.ConfigStatusSubscriber
-
-	gatewayPodGetter GatewayInstanceGetter
+	gatewayClientsProvider GatewayClientsProvider
 }
 
 // NewNodeAgent creates a new node agent.
@@ -60,7 +50,7 @@ func NewNodeAgent(
 	logger logr.Logger,
 	client *NodeAPIClient,
 	configStatusSubscriber dataplane.ConfigStatusSubscriber,
-	gatewayGetter GatewayInstanceGetter,
+	gatewayClientsProvider GatewayClientsProvider,
 ) *NodeAgent {
 	if refreshPeriod < MinRefreshNodePeriod {
 		refreshPeriod = MinRefreshNodePeriod
@@ -73,7 +63,7 @@ func NewNodeAgent(
 		konnectClient:          client,
 		refreshPeriod:          refreshPeriod,
 		configStatusSubscriber: configStatusSubscriber,
-		gatewayPodGetter:       gatewayGetter,
+		gatewayClientsProvider: gatewayClientsProvider,
 	}
 	a.configStatus.Store(uint32(dataplane.ConfigStatusOK))
 	return a
@@ -81,13 +71,14 @@ func NewNodeAgent(
 
 // Start runs the process of maintaining and uploading of KIC and kong gateway nodes.
 func (a *NodeAgent) Start(ctx context.Context) error {
-	err := a.updateNodes()
+	err := a.updateNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to run initial update of nodes, agent abort")
 	}
 
 	go a.updateNodeLoop(ctx)
 	go a.subscribeConfigStatus(ctx)
+	go a.subscribeToGatewayClientsChanges(ctx)
 
 	// We're waiting here as that's the manager.Runnable interface requirement to block until the context is done.
 	<-ctx.Done()
@@ -116,10 +107,30 @@ func (a *NodeAgent) subscribeConfigStatus(ctx context.Context) {
 	for {
 		select {
 		case <-chDone:
-			a.Logger.Info("subscribe loop stopped", "message", ctx.Err().Error())
+			a.Logger.Info("subscribe config status loop stopped", "message", ctx.Err().Error())
 			return
 		case configStatus := <-ch:
 			a.configStatus.Store(uint32(configStatus))
+		}
+	}
+}
+
+func (a *NodeAgent) subscribeToGatewayClientsChanges(ctx context.Context) {
+	gatewayClientsChangedCh, changesAreExpected := a.gatewayClientsProvider.SubscribeToGatewayClientsChanges()
+	if !changesAreExpected {
+		// There are no changes of gateway clients going to happen, we don't have to watch them.
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			a.Logger.Info("subscribe gateway clients changes loop stopped", "message", ctx.Err().Error())
+			return
+		case <-gatewayClientsChangedCh:
+			if err := a.updateNodes(ctx); err != nil {
+				a.Logger.Error(err, "failed to update nodes after gateway clients changed")
+			}
 		}
 	}
 }
@@ -209,39 +220,45 @@ func (a *NodeAgent) updateKICNode(existingNodes []*NodeItem) error {
 }
 
 // updateGatewayNodes updates status of controlled kong gateway nodes to konnect.
-func (a *NodeAgent) updateGatewayNodes(existingNodes []*NodeItem) error {
-	gatewayInstances, err := a.gatewayPodGetter.GetGatewayInstances()
-	if err != nil {
-		return fmt.Errorf("failed to get controlled kong gateway pods: %w", err)
-	}
-	gatewayInstanceMap := make(map[string]struct{})
+func (a *NodeAgent) updateGatewayNodes(ctx context.Context, existingNodes []*NodeItem) error {
+	const proxyNodeType = NodeTypeKongProxy
 
-	nodeType := NodeTypeKongProxy
+	gatewayInstances := a.gatewayClientsProvider.GatewayClients()
+	gatewayInstanceMap := make(map[string]struct{})
 
 	existingNodeMap := make(map[string][]*NodeItem)
 	for _, node := range existingNodes {
-		if node.Type == nodeType {
+		if node.Type == proxyNodeType {
 			existingNodeMap[node.Hostname] = append(existingNodeMap[node.Hostname], node)
 		}
 	}
 
 	for _, gateway := range gatewayInstances {
-		gatewayInstanceMap[gateway.hostname] = struct{}{}
-		nodes, ok := existingNodeMap[gateway.hostname]
+		hostname, err := gatewayHostname(gateway)
+		if err != nil {
+			continue
+		}
+		gatewayInstanceMap[hostname] = struct{}{}
+		nodes, ok := existingNodeMap[hostname]
+
+		gatewayVersion, err := gateway.GetKongVersion(ctx)
+		if err != nil {
+			continue
+		}
 
 		// hostname in existing nodes, should create a new node.
 		if !ok || len(nodes) == 0 {
 			createNodeReq := &CreateNodeRequest{
-				Hostname: gateway.hostname,
-				Version:  gateway.version,
-				Type:     nodeType,
+				Hostname: hostname,
+				Version:  gatewayVersion,
+				Type:     proxyNodeType,
 				LastPing: time.Now().Unix(),
 			}
 			newNode, err := a.konnectClient.CreateNode(createNodeReq)
 			if err != nil {
-				a.Logger.Error(err, "failed to create kong gateway node", "hostname", gateway.hostname)
+				a.Logger.Error(err, "failed to create kong gateway node", "hostname", hostname)
 			} else {
-				a.Logger.Info("created kong gateway node", "hostname", gateway.hostname, "node_id", newNode.Item.ID)
+				a.Logger.Info("created kong gateway node", "hostname", hostname, "node_id", newNode.Item.ID)
 			}
 			continue
 		}
@@ -249,19 +266,19 @@ func (a *NodeAgent) updateGatewayNodes(existingNodes []*NodeItem) error {
 		// sort the nodes by last ping, and only reserve the latest node.
 		sortNodesByLastPing(nodes)
 		updateNodeReq := &UpdateNodeRequest{
-			Hostname: gateway.hostname,
-			Version:  gateway.version,
-			Type:     nodeType,
+			Hostname: hostname,
+			Version:  gatewayVersion,
+			Type:     proxyNodeType,
 			LastPing: time.Now().Unix(),
 		}
 		// update the latest node.
 		latestNode := nodes[0]
-		_, err := a.konnectClient.UpdateNode(latestNode.ID, updateNodeReq)
+		_, err = a.konnectClient.UpdateNode(latestNode.ID, updateNodeReq)
 		if err != nil {
-			a.Logger.Error(err, "failed to update kong gateway node", "hostname", gateway.hostname, "node_id", latestNode.ID)
+			a.Logger.Error(err, "failed to update kong gateway node", "hostname", hostname, "node_id", latestNode.ID)
 			continue
 		}
-		a.Logger.V(util.DebugLevel).Info("updated kong gateway node", "hostname", gateway.hostname, "node_id", latestNode.ID)
+		a.Logger.V(util.DebugLevel).Info("updated kong gateway node", "hostname", hostname, "node_id", latestNode.ID)
 		// succeeded to update node, remove the other outdated nodes.
 		for i := 1; i < len(nodes); i++ {
 			node := nodes[i]
@@ -293,7 +310,7 @@ func (a *NodeAgent) updateGatewayNodes(existingNodes []*NodeItem) error {
 }
 
 // updateNodes updates current status of KIC and controlled kong gateway nodes.
-func (a *NodeAgent) updateNodes() error {
+func (a *NodeAgent) updateNodes(ctx context.Context) error {
 	existingNodes, err := a.konnectClient.ListAllNodes()
 	if err != nil {
 		return fmt.Errorf("failed to list existing nodes: %w", err)
@@ -305,7 +322,7 @@ func (a *NodeAgent) updateNodes() error {
 		return fmt.Errorf("failed to update KIC node: %w", err)
 	}
 
-	err = a.updateGatewayNodes(existingNodes)
+	err = a.updateGatewayNodes(ctx, existingNodes)
 	if err != nil {
 		return fmt.Errorf("failed to update controlled kong gateway nodes: %w", err)
 	}
@@ -323,7 +340,7 @@ func (a *NodeAgent) updateNodeLoop(ctx context.Context) {
 			a.Logger.Info("update node loop stopped", "message", err.Error())
 			return
 		case <-ticker.C:
-			err := a.updateNodes()
+			err := a.updateNodes(ctx)
 			if err != nil {
 				a.Logger.Error(err, "failed to update nodes")
 			}
@@ -331,163 +348,19 @@ func (a *NodeAgent) updateNodeLoop(ctx context.Context) {
 	}
 }
 
-// GatewayEndpointStore used to subscribe and store endpoints of gateway admin APIs.
-// Used when gateway discovery is enabled. Use `pod_namespace/pod_name` for node hostnames of gateway nodes.
-type GatewayEndpointStore struct {
-	lock                      sync.RWMutex
-	logger                    logr.Logger
-	gatewayEndpointsChan      chan []adminapi.DiscoveredAdminAPI
-	gatewayEndpointVersionMap map[types.NamespacedName]string
-	clientsProvider           dataplane.AdminAPIClientsProvider
-}
-
-var _ GatewayInstanceGetter = &GatewayEndpointStore{}
-
-// NewGatewayEndpointStore creates a GatewayEndpointStore to subscribe endpoints of gateway admin APIs.
-func NewGatewayEndpointStore(
-	ctx context.Context,
-	logger logr.Logger,
-	initGatewayEndpoints []adminapi.DiscoveredAdminAPI,
-	gatewayEndpointsChan chan []adminapi.DiscoveredAdminAPI,
-	clientsProvider dataplane.AdminAPIClientsProvider,
-) *GatewayEndpointStore {
-	gatewayEndpointVersionMap := make(map[types.NamespacedName]string)
-	gatewayClients := clientsProvider.GatewayClients()
-
-	// TODO: get the address for each endpoint and get their versions
-	// https://github.com/Kong/kubernetes-ingress-controller/issues/3590
-	kongVersion := ""
-	if len(gatewayClients) != 0 {
-		v, err := gatewayClients[0].GetKongVersion(ctx)
-		if err != nil {
-			logger.Error(err, "failed to get kong version")
-		} else {
-			kongVersion = v
-		}
-	}
-	// store provided initial endpoints and their versions.
-	for _, endpoint := range initGatewayEndpoints {
-		logger.V(util.DebugLevel).Info("init gateway admin API endpoint", "namespace", endpoint.PodRef.Namespace, "name", endpoint.PodRef.Name)
-		gatewayEndpointVersionMap[endpoint.PodRef] = kongVersion
+func gatewayHostname(c *adminapi.Client) (string, error) {
+	if podNN, ok := c.PodReference(); ok {
+		return podNN.String(), nil
 	}
 
-	s := &GatewayEndpointStore{
-		logger:                    logger.WithName("gateway-endpoint-store"),
-		gatewayEndpointsChan:      gatewayEndpointsChan,
-		gatewayEndpointVersionMap: gatewayEndpointVersionMap,
-		clientsProvider:           clientsProvider,
+	rootURL := c.BaseRootURL()
+	u, err := url.Parse(rootURL)
+	if err != nil {
+		// this should never happen
+		return "", fmt.Errorf("failed to parse client's root url: %w", err)
 	}
 
-	// start loop to subscribe changes of endpoints.
-	go s.subscribeEndpointLoop(ctx)
-	return s
-}
-
-// GetGatewayInstances returns hostnames and versions of instances from gateway admin API endpoints.
-func (s *GatewayEndpointStore) GetGatewayInstances() ([]GatewayInstance, error) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	gatewayPods := []GatewayInstance{}
-	for podNN, version := range s.gatewayEndpointVersionMap {
-		gatewayPods = append(gatewayPods, GatewayInstance{
-			hostname: podNN.String(),
-			version:  version,
-		})
-	}
-
-	return gatewayPods, nil
-}
-
-// updateEndpoints updates endpoints of gateway admin API service and their versions.
-func (s *GatewayEndpointStore) updateEndpoints(ctx context.Context, endpoints []adminapi.DiscoveredAdminAPI) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	gatewayClients := s.clientsProvider.GatewayClients()
-	// TODO: get the address for each endpoint and get their versions:
-	// https://github.com/Kong/kubernetes-ingress-controller/issues/3590
-	kongVersion := ""
-	if len(gatewayClients) != 0 {
-		v, err := gatewayClients[0].GetKongVersion(ctx)
-		if err != nil {
-			s.logger.Error(err, "failed to get kong version")
-		} else {
-			kongVersion = v
-		}
-	}
-	// update the versions of new endpoints.
-	gatewayEndpointVersionMap := make(map[types.NamespacedName]string)
-	for _, endpoint := range endpoints {
-		s.logger.Info("updated endpoint", "namespace", endpoint.PodRef.Namespace, "name", endpoint.PodRef.Name)
-		gatewayEndpointVersionMap[endpoint.PodRef] = kongVersion
-	}
-	s.gatewayEndpointVersionMap = gatewayEndpointVersionMap
-}
-
-// subscribeEndpointLoop runs the loop to receive new endpoints when endpoints changed.
-func (s *GatewayEndpointStore) subscribeEndpointLoop(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			err := ctx.Err()
-			s.logger.Info("update node loop stopped", "message", err.Error())
-			return
-		case endpoints := <-s.gatewayEndpointsChan:
-			s.logger.V(util.DebugLevel).Info("update gateway endpoints")
-			s.updateEndpoints(ctx, endpoints)
-		}
-	}
-}
-
-// GatewayClientGetter gets gateway instances from admin API clients.
-// It is used when gateway discovery is not enabled (`--kong-admin-svc` not set).
-// it will use `gateway_<address>` as node hostname, like `gateway_127.0.0.1`.
-type GatewayClientGetter struct {
-	logger          logr.Logger
-	clientsProvider dataplane.AdminAPIClientsProvider
-}
-
-var _ GatewayInstanceGetter = &GatewayClientGetter{}
-
-// NewGatewayClientGetter creates a GatewayClientGetter to get gateway instances from client provider.
-func NewGatewayClientGetter(logger logr.Logger, clientsProvider dataplane.AdminAPIClientsProvider) *GatewayClientGetter {
-	return &GatewayClientGetter{
-		logger:          logger.WithName("gateway-admin-api-getter"),
-		clientsProvider: clientsProvider,
-	}
-}
-
-// GetGatewayInstances gets gateway instances from currently available gateway API clients.
-func (p *GatewayClientGetter) GetGatewayInstances() ([]GatewayInstance, error) {
-	gatewayClients := p.clientsProvider.GatewayClients()
-	// TODO: get version of each kong gateway instance behind clients:
-	// https://github.com/Kong/kubernetes-ingress-controller/issues/3590
-	kongVersion := ""
-	if len(gatewayClients) != 0 {
-		v, err := gatewayClients[0].GetKongVersion(context.Background())
-		if err != nil {
-			p.logger.Error(err, "failed to get kong version")
-		} else {
-			kongVersion = v
-		}
-	}
-
-	gatewayInstances := make([]GatewayInstance, 0, len(gatewayClients))
-	for _, client := range gatewayClients {
-		rootURL := client.BaseRootURL()
-		u, err := url.Parse(rootURL)
-		if err != nil {
-			p.logger.Error(err, "failed to parse URL of gateway admin API from raw URL, skipping", "url", rootURL)
-			continue
-		}
-		// use "gateway_address" as hostname of konnect node.
-		// REVIEW: trim ports in addresses? like 127.0.0.1:8444 -> gateway_127.0.0.1
-		hostname := "gateway" + "_" + u.Host
-		gatewayInstances = append(gatewayInstances, GatewayInstance{
-			hostname: hostname,
-			version:  kongVersion,
-		})
-	}
-
-	return gatewayInstances, nil
+	// use "gateway_address" as hostname of konnect node.
+	// REVIEW: trim ports in addresses? like 127.0.0.1:8444 -> gateway_127.0.0.1
+	return "gateway" + "_" + u.Host, nil
 }

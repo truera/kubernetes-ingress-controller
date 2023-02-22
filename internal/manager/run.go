@@ -12,7 +12,6 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -196,7 +195,7 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 
 		// start node registration to konnect.
 		if err := startKonnectNodeRegistration(
-			ctx, c, mgr,
+			c, mgr,
 			dataplaneClient,
 			clientsManager,
 			setupLog,
@@ -235,7 +234,7 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 // startKonnectNodeRegistration starts node registration to konnect.
 // returns error if failed to create or run agent to maintain KIC and kong gateway nodes.
 func startKonnectNodeRegistration(
-	ctx context.Context, c *Config,
+	c *Config,
 	mgr manager.Manager,
 	dataplaneClient *dataplane.KongClient,
 	clientsManager *dataplane.AdminAPIClientsManager,
@@ -246,59 +245,24 @@ func startKonnectNodeRegistration(
 	if err != nil {
 		return fmt.Errorf("failed creating konnect client: %w", err)
 	}
-	var hostname string
-	nn, err := util.GetPodNN()
-	if err != nil {
-		logger.Error(err, "failed getting pod name and/or namespace, fallback to use hostname as node name in konnect")
-		hostname, _ = os.Hostname()
-	} else {
-		hostname = nn.String()
-		logger.Info(fmt.Sprintf("use %s as node name in konnect", hostname))
-	}
-	version := metadata.Release
 	// set channel to send config status.
 	configStatusNotifier := dataplane.NewChannelConfigNotifier()
 	dataplaneClient.SetConfigStatusNotifier(configStatusNotifier)
 
-	var gatewayInstanceGetter konnect.GatewayInstanceGetter
-	// set up gateway endpoints storer to save status of gateway instances if gateway discovery is turned on.
-	if c.KongAdminSvc.Namespace != "" && c.KongAdminSvc.Name != "" {
-		kubeClient, err := c.GetKubeClient()
-		if err != nil {
-			return fmt.Errorf("failed getting kubernetes client for getting admin APIs for service: %w", err)
-		}
-		// get admin API endpoints from specified admin API service.
-		s, err := adminapi.GetAdminAPIsForService(
-			ctx, kubeClient, c.KongAdminSvc,
-			sets.Set[string](sets.NewString(c.KondAdminSvcPortNames...)),
-		)
-		if err != nil {
-			return fmt.Errorf("failed getting admin API endpoints from service %s: %w",
-				c.KongAdminSvc.String(), err)
-		}
-		initDiscoveredAdminAPIs := s.UnsortedList()
-		// start the gateway instance getter from endpoints.
-		gatewayInstanceGetter = konnect.NewGatewayEndpointStore(
-			ctx,
-			logger,
-			initDiscoveredAdminAPIs,
-			clientsManager.SubscribeDiscoveredAdminAPIs(),
-			clientsManager,
-		)
-	} else {
-		// if gateway discovery is not enabled, start the instance getter from gateway clients.
-		gatewayInstanceGetter = konnect.NewGatewayClientGetter(logger, clientsManager)
+	hostname, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("failed to get hostname: %w", err)
 	}
 
 	// create node agent and add it to manager.
 	agent := konnect.NewNodeAgent(
 		hostname,
-		version,
+		metadata.Release,
 		c.Konnect.RefreshNodePeriod,
 		logger,
 		konnectNodeAPIClient,
 		configStatusNotifier,
-		gatewayInstanceGetter,
+		clientsManager,
 	)
 	if err := mgr.Add(agent); err != nil {
 		return fmt.Errorf("failed adding konnect.NodeAgent runnable to the manager: %w", err)

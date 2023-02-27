@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kong/deck/file"
@@ -459,13 +460,15 @@ func (c *KongClient) Update(ctx context.Context) error {
 func (c *KongClient) sendOutToClients(
 	ctx context.Context, s *kongstate.KongState, formatVersion string, config sendconfig.Config,
 ) ([]string, error) {
-	clients := c.clientsProvider.AllClients()
-	c.logger.Debugf("sending configuration to %d clients", len(clients))
-	shas, err := iter.MapErr(clients, func(client **adminapi.Client) (string, error) {
-		newSHA, err := c.sendToClient(ctx, *client, s, formatVersion, config)
-		return handleSendToClientResult(*client, c.logger, newSHA, err)
-	},
-	)
+	var shas []string
+	var err error
+	// send to only one gateway client and all konnect clients if gateway is DB-backed.
+	if !config.InMemory {
+		shas, err = c.sendOutToClientsDBMode(ctx, s, formatVersion, config)
+	} else {
+		shas, err = c.sendOutToClientsInMemory(ctx, s, formatVersion, config)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -475,6 +478,47 @@ func (c *KongClient) sendOutToClients(
 	c.SHAs = shas
 
 	return previousSHAs, nil
+}
+
+// sendOutToClientsDBMode send out configurations to clients when gateways are DB-backed.
+// In this mode, KongClient should send to ONE gateway client and ALL konnect clients.
+func (c *KongClient) sendOutToClientsDBMode(
+	ctx context.Context, s *kongstate.KongState, formatVersion string, config sendconfig.Config,
+) ([]string, error) {
+	clients := c.clientsProvider.AllClients()
+	hasSentToGateway := atomic.Bool{}
+	return iter.MapErr(clients, func(client **adminapi.Client) (string, error) {
+		if (*client).IsKonnect() {
+			newSHA, err := c.sendToClient(ctx, *client, s, formatVersion, config)
+			return handleSendToClientResult(*client, c.logger, newSHA, err)
+		}
+
+		// make sure that the configurations are sent to only one gateway client.
+		// only the gateway client which saw the "false" status of hasSentToGateway would receive the configurations.
+		// From https://docs.konghq.com/gateway/latest/admin-api/:
+		// Requests to the Admin API can be sent to any node in the cluster, and Kong will keep the configuration consistent across all nodes (when DB-backed).
+		shouldSend := hasSentToGateway.CompareAndSwap(false, true)
+		if shouldSend {
+			c.logger.Debug("send configurations to one gateway client")
+			newSHA, err := c.sendToClient(ctx, *client, s, formatVersion, config)
+			return handleSendToClientResult(*client, c.logger, newSHA, err)
+		}
+
+		c.logger.Debugf("configurations already sent to another gateway client, skipping since gateways are using DB %s", c.dbmode)
+		return "", nil
+	})
+}
+
+func (c *KongClient) sendOutToClientsInMemory(
+	ctx context.Context, s *kongstate.KongState, formatVersion string, config sendconfig.Config,
+) ([]string, error) {
+	clients := c.clientsProvider.AllClients()
+	c.logger.Debugf("sending configuration to %d clients in dbless mode", len(clients))
+	return iter.MapErr(clients, func(client **adminapi.Client) (string, error) {
+		newSHA, err := c.sendToClient(ctx, *client, s, formatVersion, config)
+		return handleSendToClientResult(*client, c.logger, newSHA, err)
+	},
+	)
 }
 
 func (c *KongClient) sendToClient(

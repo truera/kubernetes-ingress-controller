@@ -55,7 +55,7 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 		return fmt.Errorf("get kubeconfig from file %q: %w", c.KubeconfigPath, err)
 	}
 	setupLog.Info("getting the kong admin api client configuration")
-	initialKongClients, err := c.adminAPIClients(ctx)
+	initialKongClients, err := c.adminAPIClients(ctx, setupLog.WithName("initialize-kong-clients"))
 	if err != nil {
 		return fmt.Errorf("unable to build kong api client(s): %w", err)
 	}

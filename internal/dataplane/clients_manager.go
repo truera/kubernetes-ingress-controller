@@ -2,7 +2,6 @@ package dataplane
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	"github.com/samber/lo"
@@ -52,10 +51,6 @@ func NewAdminAPIClientsManager(
 	initialClients []*adminapi.Client,
 	kongClientFactory ClientFactory,
 ) (*AdminAPIClientsManager, error) {
-	if len(initialClients) == 0 {
-		return nil, errors.New("at least one initial client must be provided")
-	}
-
 	return &AdminAPIClientsManager{
 		gatewayClients:                initialClients,
 		adminAPIClientFactory:         kongClientFactory,

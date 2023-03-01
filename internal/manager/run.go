@@ -55,9 +55,41 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 		return fmt.Errorf("get kubeconfig from file %q: %w", c.KubeconfigPath, err)
 	}
 	setupLog.Info("getting the kong admin api client configuration")
-	initialKongClients, err := c.adminAPIClients(ctx, setupLog.WithName("initialize-kong-clients"))
+
+	var initialKongClients []*adminapi.Client
+
+	if c.KongAdminSvc.IsAbsent() {
+		initialKongClients, err = c.adminAPIClients(ctx, setupLog.WithName("initialize-kong-clients"))
+		if err != nil {
+			return fmt.Errorf("unable to build kong api client(s): %w", err)
+		}
+	}
+
+	clientsManager, err := dataplane.NewAdminAPIClientsManager(
+		ctx,
+		deprecatedLogger,
+		initialKongClients,
+		adminapi.NewClientFactoryForWorkspace(c.KongWorkspace, c.KongAdminAPIConfig, c.KongAdminToken),
+	)
 	if err != nil {
-		return fmt.Errorf("unable to build kong api client(s): %w", err)
+		return fmt.Errorf("failed to create AdminAPIClientsManager: %w", err)
+	}
+	if c.KongAdminSvc.IsPresent() {
+		setupLog.Info("Running AdminAPIClientsManager notify loop")
+		clientsManager.RunNotifyLoop()
+
+		setupLog.Info("Wait for AdminAPIClientsManager to detect available clients")
+		clientChangeChan, ok := clientsManager.SubscribeToGatewayClientsChanges()
+		if !ok {
+			return errors.New("notify loop of AdminAPIClientsManager is not running")
+		}
+		for range clientChangeChan {
+			clients := clientsManager.GatewayClients()
+			if len(clients) > 0 {
+				initialKongClients = clients
+				setupLog.Info("got initial clients")
+			}
+		}
 	}
 
 	// Get Kong configuration root(s) to validate them and extract Kong's version.
@@ -93,27 +125,13 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 		return fmt.Errorf("unable to start controller manager: %w", err)
 	}
 
-	setupLog.Info("Initializing Dataplane Client")
-	eventRecorder := mgr.GetEventRecorderFor(KongClientEventRecorderComponentName)
-
-	clientsManager, err := dataplane.NewAdminAPIClientsManager(
-		ctx,
-		deprecatedLogger,
-		initialKongClients,
-		adminapi.NewClientFactoryForWorkspace(c.KongWorkspace, c.KongAdminAPIConfig, c.KongAdminToken),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create AdminAPIClientsManager: %w", err)
-	}
-	if c.KongAdminSvc.IsPresent() {
-		setupLog.Info("Running AdminAPIClientsManager notify loop")
-		clientsManager.RunNotifyLoop()
-	}
-
 	setupLog.Info("Starting Admission Server")
 	if err := setupAdmissionServer(ctx, c, clientsManager, mgr.GetClient(), deprecatedLogger); err != nil {
 		return err
 	}
+
+	setupLog.Info("Initializing Dataplane Client")
+	eventRecorder := mgr.GetEventRecorderFor(KongClientEventRecorderComponentName)
 
 	dataplaneClient, err := dataplane.NewKongClient(
 		deprecatedLogger,

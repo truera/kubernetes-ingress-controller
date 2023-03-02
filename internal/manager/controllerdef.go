@@ -5,7 +5,6 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	knativev1alpha1 "knative.dev/networking/pkg/apis/networking/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -65,7 +64,6 @@ func setupControllers(
 	kubernetesStatusQueue *status.Queue,
 	c *Config,
 	featureGates map[string]bool,
-	kongAdminAPIEndpointsNotifier configuration.EndpointsNotifier,
 ) ([]ControllerDef, error) {
 	restMapper := mgr.GetClient().RESTMapper()
 
@@ -87,20 +85,7 @@ func setupControllers(
 	referenceIndexers := ctrlref.NewCacheIndexers()
 
 	controllers := []ControllerDef{
-		// ---------------------------------------------------------------------------
-		// Kong Gateway Admin API Service discovery
-		// ---------------------------------------------------------------------------
-		{
-			Enabled: c.KongAdminSvc.IsPresent(),
-			Controller: &configuration.KongAdminAPIServiceReconciler{
-				Client:            mgr.GetClient(),
-				ServiceNN:         c.KongAdminSvc.OrEmpty(),
-				PortNames:         sets.New(c.KondAdminSvcPortNames...),
-				Log:               ctrl.Log.WithName("controllers").WithName("KongAdminAPIService"),
-				CacheSyncTimeout:  c.CacheSyncTimeout,
-				EndpointsNotifier: kongAdminAPIEndpointsNotifier,
-			},
-		},
+
 		// ---------------------------------------------------------------------------
 		// Core API Controllers
 		// ---------------------------------------------------------------------------

@@ -12,12 +12,14 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/adminapi"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/controllers/configuration"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/controllers/gateway"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/sendconfig"
@@ -74,20 +76,59 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 	if err != nil {
 		return fmt.Errorf("failed to create AdminAPIClientsManager: %w", err)
 	}
+
 	if c.KongAdminSvc.IsPresent() {
 		setupLog.Info("Running AdminAPIClientsManager notify loop")
 		clientsManager.RunNotifyLoop()
+
+		mgrForAdminAPIController, err := ctrl.NewManager(kubeconfig, manager.Options{
+			Port:             9444,
+			LeaderElection:   true,
+			LeaderElectionID: c.LeaderElectionID + "-kong-admin-api",
+			SyncPeriod:       &c.SyncPeriod,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to start a manager for kong admin API controller: %w", err)
+		}
+		controller := ControllerDef{
+			Enabled: true,
+			Controller: &configuration.KongAdminAPIServiceReconciler{
+				Client:            mgrForAdminAPIController.GetClient(),
+				ServiceNN:         c.KongAdminSvc.OrEmpty(),
+				PortNames:         sets.New(c.KondAdminSvcPortNames...),
+				Log:               ctrl.Log.WithName("controllers").WithName("KongAdminAPIService"),
+				CacheSyncTimeout:  c.CacheSyncTimeout,
+				EndpointsNotifier: clientsManager,
+			},
+		}
+		controller.MaybeSetupWithManager(mgrForAdminAPIController)
+
+		errCh := make(chan error, 1)
+		go func() {
+			err := mgrForAdminAPIController.Start(ctx)
+			if err != nil {
+				errCh <- err
+			}
+		}()
 
 		setupLog.Info("Wait for AdminAPIClientsManager to detect available clients")
 		clientChangeChan, ok := clientsManager.SubscribeToGatewayClientsChanges()
 		if !ok {
 			return errors.New("notify loop of AdminAPIClientsManager is not running")
 		}
-		for range clientChangeChan {
-			clients := clientsManager.GatewayClients()
-			if len(clients) > 0 {
-				initialKongClients = clients
-				setupLog.Info("got initial clients")
+
+		var gotClients bool
+		for !gotClients {
+			select {
+			case <-clientChangeChan:
+				clients := clientsManager.GatewayClients()
+				if len(clients) > 0 {
+					initialKongClients = clients
+					gotClients = true
+					setupLog.Info("got initial clients")
+				}
+			case err := <-errCh:
+				return fmt.Errorf("kong admin API service controller failed: %w", err)
 			}
 		}
 	}
@@ -177,7 +218,7 @@ func Run(ctx context.Context, c *Config, diagnostic util.ConfigDumpDiagnostic, d
 
 	setupLog.Info("Starting Enabled Controllers")
 	controllers, err := setupControllers(mgr, dataplaneClient,
-		dataplaneAddressFinder, udpDataplaneAddressFinder, kubernetesStatusQueue, c, featureGates, clientsManager)
+		dataplaneAddressFinder, udpDataplaneAddressFinder, kubernetesStatusQueue, c, featureGates)
 	if err != nil {
 		return fmt.Errorf("unable to setup controller as expected %w", err)
 	}

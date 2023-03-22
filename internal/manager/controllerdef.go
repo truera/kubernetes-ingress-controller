@@ -84,7 +84,7 @@ func setupControllers(
 		restMapper,
 	)
 
-	referenceIndexers := ctrlref.NewCacheIndexers()
+	referenceIndexers := ctrlref.NewCacheIndexers(mgr.GetLogger().WithName("reference_indexer"))
 
 	controllers := []ControllerDef{
 		// ---------------------------------------------------------------------------

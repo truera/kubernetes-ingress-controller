@@ -3,10 +3,12 @@ package reference
 import (
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 const (
@@ -37,15 +39,18 @@ func objectKeyFunc(obj client.Object) string {
 // both provided. It can also list reference records by referrer or by referent.
 type CacheIndexers struct {
 	indexer cache.Indexer
+
+	logger logr.Logger
 }
 
-func NewCacheIndexers() CacheIndexers {
+func NewCacheIndexers(l logr.Logger) CacheIndexers {
 	return CacheIndexers{
 		indexer: cache.NewIndexer(ObjectReferenceKeyFunc,
 			cache.Indexers{
 				IndexNameReferrer: ObjectReferenceIndexerReferrer,
 				IndexNameReferent: ObjectReferenceIndexerReferent,
 			}),
+		logger: l,
 	}
 }
 
@@ -160,9 +165,21 @@ func (c CacheIndexers) DeleteObjectIfNotReferred(obj client.Object, dataplaneCli
 	if err != nil {
 		return err
 	}
-	if !referred {
-		return dataplaneClient.DeleteObject(obj)
+
+	if referred {
+		return nil
 	}
+
+	if err := dataplaneClient.DeleteObject(obj); err != nil {
+		return err
+	}
+
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	c.logger.V(util.DebugLevel).Info(
+		fmt.Sprintf("Deleted %s/%s.%s which is not referred", gvk.Group, gvk.Version, gvk.Kind),
+		"namespace", obj.GetNamespace(),
+		"name", obj.GetName(),
+	)
 	return nil
 }
 

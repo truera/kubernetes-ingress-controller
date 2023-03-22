@@ -2,6 +2,7 @@ package reference
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -10,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
 
 const (
@@ -40,6 +42,15 @@ func UpdateReferencesToSecret(
 			referrerCopy, secret.DeepCopy()); err != nil {
 			return err
 		}
+
+		referrerGVK := referrerCopy.GetObjectKind().GroupVersionKind()
+		indexers.logger.V(util.DebugLevel).Info(
+			fmt.Sprintf("secret get referred by %s/%s.%s", referrerGVK.Group, referrerGVK.Version, referrerGVK.Kind),
+			"referrer_namespace", referrerCopy.GetNamespace(),
+			"referrer_name", referrerCopy.GetName(),
+			"secret_namespace", secret.Namespace,
+			"secret_name", secret.Name,
+		)
 
 		if err := c.Get(ctx, nsName, secret); err != nil {
 			return err
@@ -84,6 +95,14 @@ func removeOutdatedReferencesToSecret(
 			if err := indexers.DeleteObjectReference(referrer, obj); err != nil {
 				return err
 			}
+			referrerGVK := referrer.GetObjectKind().GroupVersionKind()
+			indexers.logger.V(util.DebugLevel).Info(
+				fmt.Sprintf("secret no longer referred by %s/%s.%s", referrerGVK.Group, referrerGVK.Version, referrerGVK.Kind),
+				"referrer_namespace", referrer.GetNamespace(),
+				"referrer_name", referrer.GetName(),
+				"secret_namespace", obj.GetNamespace(),
+				"secret_name", obj.GetName(),
+			)
 			// remove the secret in object cache if it is not referred and does not have label "konghq.com/ca-cert:true".
 			// Do this check and delete when the reference count may be reduced by 1.
 

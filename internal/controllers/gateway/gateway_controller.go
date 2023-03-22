@@ -661,6 +661,7 @@ func (r *GatewayReconciler) determineListenersFromDataPlane(
 	// are configured for them in the data-plane.
 	upgradedListeners := make([]Listener, 0, len(listeners))
 	for _, listener := range listeners {
+		newListeners := make([]Listener, 0)
 		if streamListener, ok := streamListenersMap[portMapper[int(listener.Port)]]; ok {
 			if streamListener.SSL {
 				listener.Protocol = gatewayv1beta1.TLSProtocolType
@@ -669,6 +670,7 @@ func (r *GatewayReconciler) determineListenersFromDataPlane(
 						{Group: &gatewayV1beta1Group, Kind: (Kind)("TLSRoute")},
 					},
 				}
+				newListeners = append(newListeners, listener)
 			}
 		}
 		if proxyListener, ok := proxyListenersMap[portMapper[int(listener.Port)]]; ok {
@@ -679,6 +681,12 @@ func (r *GatewayReconciler) determineListenersFromDataPlane(
 						{Group: &gatewayV1beta1Group, Kind: (Kind)("HTTPRoute")},
 					},
 				}
+				tlsListener := listener
+				tlsListener.Protocol = gatewayv1beta1.TLSProtocolType
+				tlsListener.AllowedRoutes.Kinds = append(tlsListener.AllowedRoutes.Kinds,
+					gatewayv1beta1.RouteGroupKind{Group: &gatewayV1beta1Group, Kind: (Kind)("TLSRoute")})
+				newListeners = append(newListeners, listener)
+				newListeners = append(newListeners, tlsListener)
 			} else {
 				listener.Protocol = gatewayv1beta1.HTTPProtocolType
 				listener.AllowedRoutes = &gatewayv1beta1.AllowedRoutes{
@@ -686,9 +694,10 @@ func (r *GatewayReconciler) determineListenersFromDataPlane(
 						{Group: &gatewayV1beta1Group, Kind: (Kind)("HTTPRoute")},
 					},
 				}
+				newListeners = append(newListeners, listener)
 			}
 		}
-		upgradedListeners = append(upgradedListeners, listener)
+		upgradedListeners = append(upgradedListeners, newListeners...)
 	}
 
 	return upgradedListeners, nil

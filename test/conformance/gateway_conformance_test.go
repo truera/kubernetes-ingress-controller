@@ -88,8 +88,10 @@ func TestGatewayConformance(t *testing.T) {
 			// extended conformance
 			// https://github.com/Kong/kubernetes-ingress-controller/issues/3680
 			tests.GatewayClassObservedGenerationBump.ShortName,
+
 			// https://github.com/Kong/kubernetes-ingress-controller/issues/3678
-			tests.TLSRouteSimpleSameNamespace.ShortName,
+			//tests.TLSRouteSimpleSameNamespace.ShortName,
+
 			// https://github.com/Kong/kubernetes-ingress-controller/issues/3679
 			tests.HTTPRouteQueryParamMatching.ShortName,
 			// https://github.com/Kong/kubernetes-ingress-controller/issues/3681

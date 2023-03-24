@@ -77,7 +77,7 @@ func (f FieldHTTPPath) String() string {
 }
 
 type FieldHTTPHeader struct {
-	headerName string
+	HeaderName string
 }
 
 func (f FieldHTTPHeader) FieldType() FieldType {
@@ -85,5 +85,5 @@ func (f FieldHTTPHeader) FieldType() FieldType {
 }
 
 func (f FieldHTTPHeader) String() string {
-	return "http.header." + strings.ToLower(strings.ReplaceAll(f.headerName, "-", "_"))
+	return "http.header." + strings.ToLower(strings.ReplaceAll(f.HeaderName, "-", "_"))
 }

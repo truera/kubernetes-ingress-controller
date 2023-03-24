@@ -10,6 +10,7 @@ import (
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/kongstate"
+	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/parser/atc"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane/parser/translators"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
@@ -238,6 +239,96 @@ func generateKongRouteFromTranslation(
 		addRegexPrefix,
 		tags,
 	)
+}
+
+func generateKongATCFromHTTPRouteMatches(
+	routeName string,
+	matches []gatewayv1beta1.HTTPRouteMatch,
+	filters []gatewayv1beta1.HTTPRouteFilter,
+	ingressObjectInfo util.K8sObjectInfo,
+	hostnames []*string,
+	addRegexPrefix bool,
+	tags []*string,
+) ([]kongstate.Route, error) {
+	r := kongstate.Route{
+		Ingress: ingressObjectInfo,
+		Route: kong.Route{
+			Name:         kong.String(routeName),
+			PreserveHost: kong.Bool(true),
+			Tags:         tags,
+		},
+	}
+
+	protoHTTP := atc.NewPredicate(
+		atc.FieldNetProtocol{},
+		atc.OpEqual,
+		// TODO TRR no constant for this?
+		atc.StringLiteral("http"),
+	)
+	protoHTTPS := atc.NewPredicate(
+		atc.FieldNetProtocol{},
+		atc.OpEqual,
+		// TODO TRR no constant for this?
+		atc.StringLiteral("https"),
+	)
+	protos := atc.Or(protoHTTP, protoHTTPS)
+
+	var matchExpr *atc.OrMatcher
+	for _, match := range matches {
+		var path atc.Predicate
+		if match.Path == nil {
+			path = atc.NewPredicate(
+				atc.FieldHTTPPath{},
+				atc.OpPrefixMatch,
+				atc.StringLiteral("/"),
+			)
+		} else {
+			// TRC BinaryOperator seems like kind of a weird name for something that can be a prefix? dunno
+			var matchType atc.BinaryOperator
+			// TODO TRR case for regex? idk how that works in matchExpression, don't care yet
+			switch pt := *match.Path.Type; pt {
+			case gatewayv1beta1.PathMatchExact:
+				matchType = atc.OpEqual
+			case gatewayv1beta1.PathMatchPathPrefix:
+				matchType = atc.OpPrefixMatch
+			default:
+				// TODO TRR https://gateway-api.sigs.k8s.io/references/spec/#gateway.networking.k8s.io/v1beta1.HTTPPathMatch
+				// doesn't actually specify a default, but it is optional? whatever, it's prefix for now
+				matchType = atc.OpPrefixMatch
+			}
+			path = atc.NewPredicate(
+				atc.FieldHTTPPath{},
+				matchType,
+				atc.StringLiteral(*match.Path.Value),
+			)
+		}
+
+		var headers atc.Predicate
+		if len(match.Headers) > 0 {
+			for _, h := range match.Headers {
+				var matchType atc.BinaryOperator
+				// TODO TRR eyyy regex who cares
+				switch ht := *h.Type; ht {
+				case gatewayv1beta1.HeaderMatchExact:
+					matchType = atc.OpEqual
+				default:
+					matchType = atc.OpEqual
+				}
+				path = atc.NewPredicate(
+					atc.FieldHTTPHeader{
+						HeaderName: string(h.Name),
+					},
+					matchType,
+					atc.StringLiteral(*match.Path.Value),
+				)
+			}
+		}
+		matchExpr = atc.Or(atc.And(path, headers))
+	}
+	expr := atc.And(protos, matchExpr)
+	atc.ApplyExpression(&r.Route, expr, 1) // TODO TRR priority from where?
+
+	return []kongstate.Route{r}, nil
 }
 
 // generateKongRoutesFromHTTPRouteMatches converts an HTTPRouteMatches to a slice of Kong Route objects.

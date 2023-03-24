@@ -8,7 +8,7 @@ import (
 
 func TestGenerateExpression(t *testing.T) {
 	p := NewPredicate(
-		FieldHTTPHeader{headerName: "X-Kong-Test"},
+		FieldHTTPHeader{HeaderName: "X-Kong-Test"},
 		OpEqual,
 		StringLiteral("test"),
 	)

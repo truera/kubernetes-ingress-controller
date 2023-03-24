@@ -141,7 +141,7 @@ func NewPredicateHTTPMethod(op BinaryOperator, value string) Predicate {
 func NewPredicateHTTPHeader(key string, op BinaryOperator, value string) Predicate {
 	return Predicate{
 		field: FieldHTTPHeader{
-			headerName: key,
+			HeaderName: key,
 		},
 		op:    op,
 		value: StringLiteral(value),

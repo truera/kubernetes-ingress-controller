@@ -182,7 +182,7 @@ func generateKongRoutesFromHTTPRouteRule(
 				matchNumber,
 			)
 
-			r, err := generateKongRoutesFromHTTPRouteMatches(
+			r, err := generateKongATCFromHTTPRouteMatches(
 				routeName,
 				rule.Matches[matchNumber:matchNumber+1],
 				rule.Filters,
@@ -200,7 +200,7 @@ func generateKongRoutesFromHTTPRouteRule(
 		}
 	} else {
 		routeName := fmt.Sprintf("httproute.%s.%s.0.0", httproute.Namespace, httproute.Name)
-		r, err := generateKongRoutesFromHTTPRouteMatches(routeName,
+		r, err := generateKongATCFromHTTPRouteMatches(routeName,
 			rule.Matches,
 			rule.Filters,
 			objectInfo,
@@ -230,7 +230,7 @@ func generateKongRouteFromTranslation(
 	// get the hostnames from the HTTPRoute
 	hostnames := getHTTPRouteHostnamesAsSliceOfStringPointers(httproute)
 
-	return generateKongRoutesFromHTTPRouteMatches(
+	return generateKongATCFromHTTPRouteMatches(
 		translation.Name,
 		translation.Matches,
 		translation.Filters,

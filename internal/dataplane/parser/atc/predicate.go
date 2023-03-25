@@ -14,6 +14,7 @@ const (
 	FieldTypeIPCIDR
 )
 
+// TRC LHS is an acronym with no expansion, it needs one
 type LHS interface {
 	FieldType() FieldType
 	// TODO(naming): use a better name for this method? "String" is too gerneral
@@ -94,6 +95,10 @@ func (p Predicate) Expression() string {
 	op := string(p.op)
 	rhs := p.value.String()
 	return lhs + " " + op + " " + rhs
+}
+
+func (p Predicate) IsNil() bool {
+	return p.field == nil && p.op == "" && p.value == nil
 }
 
 // NewPredicate generates a single predicate.

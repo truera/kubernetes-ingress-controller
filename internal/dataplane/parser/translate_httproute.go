@@ -323,7 +323,7 @@ func generateKongATCFromHTTPRouteMatches(
 				)
 			}
 		}
-		matchExpr = atc.Or(atc.And(path, headers))
+		matchExpr = atc.Or(matchExpr, atc.And(path, headers))
 	}
 	expr := atc.And(protos, matchExpr)
 	atc.ApplyExpression(&r.Route, expr, 1) // TODO TRR priority from where?

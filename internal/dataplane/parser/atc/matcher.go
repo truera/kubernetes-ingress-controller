@@ -2,6 +2,7 @@ package atc
 
 type Matcher interface {
 	Expression() string
+	IsNil() bool
 }
 
 var (
@@ -11,6 +12,20 @@ var (
 
 type OrMatcher struct {
 	subMatchers []Matcher
+}
+
+func (m *OrMatcher) IsNil() bool {
+	if m == nil {
+		return true
+	}
+	// TRC if all my submatchers are nil, I am nil
+	var all bool
+	for _, m := range m.subMatchers {
+		if !m.IsNil() {
+			all = true
+		}
+	}
+	return all
 }
 
 func (m *OrMatcher) Expression() string {
@@ -38,13 +53,33 @@ func (m *OrMatcher) Or(matcher Matcher) *OrMatcher {
 }
 
 func Or(matchers ...Matcher) *OrMatcher {
+	actual := []Matcher{}
+	for _, m := range matchers {
+		if !m.IsNil() {
+			actual = append(actual, m)
+		}
+	}
 	return &OrMatcher{
-		subMatchers: matchers,
+		subMatchers: actual,
 	}
 }
 
 type AndMatcher struct {
 	subMatchers []Matcher
+}
+
+func (m *AndMatcher) IsNil() bool {
+	if m == nil {
+		return true
+	}
+	// TRC if all my submatchers are nil, I am nil
+	var all bool
+	for _, m := range m.subMatchers {
+		if !m.IsNil() {
+			all = true
+		}
+	}
+	return all
 }
 
 func (m *AndMatcher) Expression() string {
@@ -72,7 +107,13 @@ func (m *AndMatcher) And(matcher Matcher) *AndMatcher {
 }
 
 func And(matchers ...Matcher) *AndMatcher {
+	actual := []Matcher{}
+	for _, m := range matchers {
+		if !m.IsNil() {
+			actual = append(actual, m)
+		}
+	}
 	return &AndMatcher{
-		subMatchers: matchers,
+		subMatchers: actual,
 	}
 }

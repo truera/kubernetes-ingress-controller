@@ -303,7 +303,7 @@ func generateKongATCFromHTTPRouteMatches(
 			)
 		}
 
-		var headers atc.Predicate
+		headers := &atc.AndMatcher{}
 		if len(match.Headers) > 0 {
 			for _, h := range match.Headers {
 				var matchType atc.BinaryOperator
@@ -314,13 +314,14 @@ func generateKongATCFromHTTPRouteMatches(
 				default:
 					matchType = atc.OpEqual
 				}
-				path = atc.NewPredicate(
+				header := atc.NewPredicate(
 					atc.FieldHTTPHeader{
 						HeaderName: string(h.Name),
 					},
 					matchType,
-					atc.StringLiteral(*match.Path.Value),
+					atc.StringLiteral(h.Value),
 				)
+				headers = headers.And(header)
 			}
 		}
 		matchExpr = atc.Or(matchExpr, atc.And(path, headers))

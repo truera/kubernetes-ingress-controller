@@ -175,9 +175,10 @@ func fillRoute(route *kong.Route) {
 	if route.HTTPSRedirectStatusCode == nil {
 		route.HTTPSRedirectStatusCode = kong.Int(426)
 	}
-	if route.PathHandling == nil {
-		route.PathHandling = kong.String("v0")
-	}
+	// TRR TODO this is invalid in expressions
+	//if route.PathHandling == nil {
+	//	route.PathHandling = kong.String("v0")
+	//}
 }
 
 func fillUpstream(upstream *kong.Upstream) {

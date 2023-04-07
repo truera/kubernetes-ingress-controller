@@ -209,6 +209,42 @@ func NewCacheStoresFromObjYAML(objs ...[]byte) (c CacheStores, err error) {
 	return NewCacheStoresFromObjs(kobjs...)
 }
 
+func NewCacheStoresFromObjYAMLIgnoreUnknown(objs ...[]byte) (CacheStores, error) {
+	kobjs := make([]runtime.Object, 0, len(objs))
+	sr := serializer.NewYAMLSerializer(
+		yamlserializer.DefaultMetaFactory,
+		unstructuredscheme.NewUnstructuredCreator(),
+		unstructuredscheme.NewUnstructuredObjectTyper(),
+	)
+	for _, yaml := range objs {
+		kobj, _, decodeErr := sr.Decode(yaml, nil, nil)
+		if err := decodeErr; err != nil {
+			return CacheStores{}, err
+		}
+		kobjs = append(kobjs, kobj)
+	}
+
+	c := NewCacheStores()
+	for _, obj := range kobjs {
+		typedObj, err := mkObjFromGVK(obj.GetObjectKind().GroupVersionKind())
+		if err != nil {
+			if strings.Contains(err.Error(), "is not a supported runtime.Object") {
+				continue
+			}
+			return c, err
+		}
+
+		if err := convUnstructuredObj(obj, typedObj); err != nil {
+			return c, err
+		}
+
+		if err := c.Add(typedObj); err != nil {
+			return c, err
+		}
+	}
+	return c, nil
+}
+
 // NewCacheStoresFromObjs provides a new CacheStores object given any number of Kubernetes
 // objects that should be pre-populated. This function will sort objects into the appropriate
 // sub-storage (e.g. IngressV1, TCPIngress, e.t.c.) but will produce an error if any of the
@@ -1065,8 +1101,16 @@ func mkObjFromGVK(gvk schema.GroupVersionKind) (runtime.Object, error) {
 	// ----------------------------------------------------------------------------
 	// Kubernetes Gateway APIs
 	// ----------------------------------------------------------------------------
-	case gatewayv1beta1.SchemeGroupVersion.WithKind("HTTPRoutes"):
+	case gatewayv1beta1.SchemeGroupVersion.WithKind("HTTPRoute"):
 		return &gatewayv1beta1.HTTPRoute{}, nil
+	case gatewayv1alpha2.SchemeGroupVersion.WithKind("GRPCRoute"):
+		return &gatewayv1alpha2.GRPCRoute{}, nil
+	case gatewayv1alpha2.SchemeGroupVersion.WithKind("TCPRoute"):
+		return &gatewayv1alpha2.TCPRoute{}, nil
+	case gatewayv1alpha2.SchemeGroupVersion.WithKind("UDPRoute"):
+		return &gatewayv1alpha2.UDPRoute{}, nil
+	case gatewayv1alpha2.SchemeGroupVersion.WithKind("TLSRoute"):
+		return &gatewayv1alpha2.TLSRoute{}, nil
 	// ----------------------------------------------------------------------------
 	// Kong APIs
 	// ----------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 package conformance
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -11,9 +12,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
+	confv1alpha1 "sigs.k8s.io/gateway-api/conformance/apis/v1alpha1"
 	"sigs.k8s.io/gateway-api/conformance/tests"
 	"sigs.k8s.io/gateway-api/conformance/utils/suite"
 
@@ -70,44 +73,59 @@ func TestGatewayConformance(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, client.Delete(ctx, gatewayClass)) })
 
 	t.Log("starting the gateway conformance test suite")
-	cSuite := suite.New(suite.Options{
-		Client:                     client,
-		GatewayClassName:           gatewayClass.Name,
-		Debug:                      showDebug,
-		CleanupBaseResources:       shouldCleanup,
-		EnableAllSupportedFeatures: enableAllSupportedFeatures,
-		BaseManifests:              conformanceTestsBaseManifests,
-		SkipTests: []string{
-			// this test is currently fixed but cannot be re-enabled yet due to an upstream issue
-			// https://github.com/kubernetes-sigs/gateway-api/pull/1745
-			tests.GatewaySecretReferenceGrantSpecific.ShortName,
+	cSuite, err := suite.NewExperimentalConformanceTestSuite(suite.ExperimentalConformanceOptions{
+		Options: suite.Options{
+			Client:               client,
+			GatewayClassName:     gatewayClass.Name,
+			Debug:                showDebug,
+			CleanupBaseResources: shouldCleanup,
+			BaseManifests:        conformanceTestsBaseManifests,
+			SupportedFeatures: sets.New(
+				// core
+				suite.SupportGateway,
+				suite.SupportReferenceGrant,
+				suite.SupportHTTPRoute,
+				suite.SupportTLSRoute,
 
-			// standard conformance
-			tests.HTTPRouteHeaderMatching.ShortName,
+				// extended
+				suite.SupportHTTPRouteMethodMatching,
+				suite.SupportRouteDestinationPortMatching,
+			),
+			SkipTests: []string{
+				// standard conformance
+				// this test is currently fixed but cannot be re-enabled yet due to an upstream issue
+				// https://github.com/kubernetes-sigs/gateway-api/pull/1745
+				tests.HTTPRouteHeaderMatching.ShortName,
+				tests.GatewayWithAttachedRoutes.ShortName,
+				tests.GatewayModifyListeners.ShortName,
 
-			// extended conformance
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3680
-			tests.GatewayClassObservedGenerationBump.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3678
-			tests.TLSRouteSimpleSameNamespace.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3679
-			tests.HTTPRouteQueryParamMatching.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3681
-			tests.HTTPRouteRedirectPort.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3682
-			tests.HTTPRouteRedirectScheme.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3683
-			tests.HTTPRouteResponseHeaderModifier.ShortName,
-
-			// experimental conformance
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3684
-			tests.HTTPRouteRedirectPath.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3685
-			tests.HTTPRouteRewriteHost.ShortName,
-			// https://github.com/Kong/kubernetes-ingress-controller/issues/3686
-			tests.HTTPRouteRewritePath.ShortName,
+				// TLSRoute
+				// https://github.com/Kong/kubernetes-ingress-controller/issues/3678
+				tests.TLSRouteSimpleSameNamespace.ShortName,
+			},
+		},
+		ConformanceProfiles: sets.New(
+			suite.HTTPConformanceProfileName,
+			suite.TLSConformanceProfileName,
+		),
+		Implementation: confv1alpha1.Implementation{
+			Organization: "Kong",
+			Project:      "Kubernetes Ingress Controller",
+			URL:          "https://github.com/Kong/kubernetes-ingress-controller",
+			Version:      "2.9.3",
+			Contact:      []string{"@mlavacca"},
 		},
 	})
+	assert.NoError(t, err)
+
 	cSuite.Setup(t)
 	cSuite.Run(t, tests.ConformanceTests)
+	report, err := cSuite.Report()
+	assert.NoError(t, err)
+
+	// print the report
+	rawReport := []byte{}
+	rawReport, err = json.Marshal(report)
+	assert.NoError(t, err)
+	t.Logf("report: %s", rawReport)
 }

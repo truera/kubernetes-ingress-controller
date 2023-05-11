@@ -100,6 +100,9 @@ Adding a new version? You'll need three changes:
   It will become the default behavior in the next minor release with the possibility
   to opt-out.
   [#3963](https://github.com/Kong/kubernetes-ingress-controller/pull/3963)
+- Configuration updates to Konnect Runtime Group's Admin API now respect a backoff
+  strategy that prevents KIC from exceeding API calls limits.
+  [#3989](https://github.com/Kong/kubernetes-ingress-controller/pull/3989)
 
 ### Fixed
 

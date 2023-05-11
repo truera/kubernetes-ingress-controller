@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -36,10 +35,7 @@ import (
 // Vars & Consts
 // -----------------------------------------------------------------------------
 
-var (
-	ErrUnmanagedAnnotation = errors.New("invalid unmanaged annotation value")
-	gatewayV1beta1Group    = gatewayv1beta1.Group(gatewayv1beta1.GroupName)
-)
+var gatewayV1beta1Group = gatewayv1beta1.Group(gatewayv1beta1.GroupName)
 
 // -----------------------------------------------------------------------------
 // Gateway Controller - GatewayReconciler
@@ -53,11 +49,8 @@ type GatewayReconciler struct { //nolint:revive
 	Scheme          *runtime.Scheme
 	DataplaneClient *dataplane.KongClient
 
-	WatchNamespaces []string
-	// If EnableReferenceGrant is true, controller will watch ReferenceGrants
-	// to invalidate or allow cross-namespace TLSConfigs in gateways.
-	EnableReferenceGrant bool
-	CacheSyncTimeout     time.Duration
+	WatchNamespaces  []string
+	CacheSyncTimeout time.Duration
 
 	ReferenceIndexers ctrlref.CacheIndexers
 
@@ -116,14 +109,12 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	// watch ReferenceGrants, which may invalidate or allow cross-namespace TLSConfigs
-	if r.EnableReferenceGrant {
-		if err := c.Watch(
-			&source.Kind{Type: &gatewayv1beta1.ReferenceGrant{}},
-			handler.EnqueueRequestsFromMapFunc(r.listReferenceGrantsForGateway),
-			predicate.NewPredicateFuncs(referenceGrantHasGatewayFrom),
-		); err != nil {
-			return err
-		}
+	if err := c.Watch(
+		&source.Kind{Type: &gatewayv1beta1.ReferenceGrant{}},
+		handler.EnqueueRequestsFromMapFunc(r.listReferenceGrantsForGateway),
+		predicate.NewPredicateFuncs(referenceGrantHasGatewayFrom),
+	); err != nil {
+		return err
 	}
 
 	// start the required gatewayclass controller as well
@@ -490,10 +481,8 @@ func (r *GatewayReconciler) reconcileUnmanagedGateway(ctx context.Context, log l
 	// the ReferenceGrants need to be retrieved to ensure that all gateway listeners reference
 	// TLS secrets they are granted for
 	referenceGrantList := &gatewayv1beta1.ReferenceGrantList{}
-	if r.EnableReferenceGrant {
-		if err := r.Client.List(ctx, referenceGrantList); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := r.Client.List(ctx, referenceGrantList); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// TODO https://github.com/Kong/kubernetes-ingress-controller/issues/2559 check cross-Gateway compatibility

@@ -35,14 +35,10 @@ import (
 type HTTPRouteReconciler struct {
 	client.Client
 
-	Log             logr.Logger
-	Scheme          *runtime.Scheme
-	DataplaneClient DataPlane
-	// If EnableReferenceGrant is true, we will check for ReferenceGrant if backend in another
-	// namespace is in backendRefs.
-	// If it is false, referencing backend in different namespace will be rejected.
-	EnableReferenceGrant bool
-	CacheSyncTimeout     time.Duration
+	Log              logr.Logger
+	Scheme           *runtime.Scheme
+	DataplaneClient  DataPlane
+	CacheSyncTimeout time.Duration
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -86,14 +82,12 @@ func (r *HTTPRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	if r.EnableReferenceGrant {
-		if err := c.Watch(
-			&source.Kind{Type: &gatewayv1beta1.ReferenceGrant{}},
-			handler.EnqueueRequestsFromMapFunc(r.listReferenceGrantsForHTTPRoute),
-			predicate.NewPredicateFuncs(referenceGrantHasHTTPRouteFrom),
-		); err != nil {
-			return err
-		}
+	if err := c.Watch(
+		&source.Kind{Type: &gatewayv1beta1.ReferenceGrant{}},
+		handler.EnqueueRequestsFromMapFunc(r.listReferenceGrantsForHTTPRoute),
+		predicate.NewPredicateFuncs(referenceGrantHasHTTPRouteFrom),
+	); err != nil {
+		return err
 	}
 
 	// because of the additional burden of having to manage reference data-plane
@@ -665,10 +659,6 @@ func (r *HTTPRouteReconciler) getHTTPRouteRuleReason(ctx context.Context, httpRo
 			// Check if the object referenced is in another namespace,
 			// and if there is grant for that reference
 			if httpRoute.Namespace != backendNamespace {
-				if !r.EnableReferenceGrant {
-					return gatewayv1beta1.RouteReasonRefNotPermitted, nil
-				}
-
 				referenceGrantList := &gatewayv1beta1.ReferenceGrantList{}
 				if err := r.Client.List(ctx, referenceGrantList, client.InNamespace(backendNamespace)); err != nil {
 					return "", err

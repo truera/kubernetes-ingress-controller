@@ -14,7 +14,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -41,7 +40,7 @@ type DynamicController struct {
 	Controllers      []Controller
 	RequiredCRDs     []schema.GroupVersionResource
 
-	startControllerOnce sync.Once
+	startControllersOnce sync.Once
 }
 
 func (r *DynamicController) SetupWithManager(mgr ctrl.Manager) error {
@@ -50,7 +49,7 @@ func (r *DynamicController) SetupWithManager(mgr ctrl.Manager) error {
 		return r.setupControllers(mgr)
 	}
 
-	r.Log.Info("Required CRDs are not installed, setting up a watch for them in case they are installed afterward")
+	r.Log.Info("Required CustomResourceDefinitions are not installed, setting up a watch for them in case they are installed afterward")
 
 	c, err := controller.New("DynamicController", mgr, controller.Options{
 		Reconciler: r,
@@ -63,13 +62,10 @@ func (r *DynamicController) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	predicateFuncs := predicate.NewPredicateFuncs(r.isOneOfRequiredCRDs)
-	predicateFuncs.DeleteFunc = func(e event.DeleteEvent) bool { return false }
-	predicateFuncs.GenericFunc = func(e event.GenericEvent) bool { return false }
-	predicateFuncs.UpdateFunc = func(e event.UpdateEvent) bool { return false }
 	return c.Watch(
 		&source.Kind{Type: &apiextensionsv1.CustomResourceDefinition{}},
 		&handler.EnqueueRequestForObject{},
+		predicate.NewPredicateFuncs(r.isOneOfRequiredCRDs),
 	)
 }
 
@@ -84,7 +80,7 @@ func (r *DynamicController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return ctrl.Result{}, err
 	}
-	log.V(util.DebugLevel).Info("Processing CustomResourceDefinition", "name", req.Name)
+	log.V(util.InfoLevel).Info("Processing CustomResourceDefinition", "name", req.Name)
 
 	if !r.allRequiredCRDsInstalled() {
 		log.V(util.InfoLevel).Info("Still not all required CustomResourceDefinitions are installed, waiting")
@@ -92,7 +88,7 @@ func (r *DynamicController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	var startControllersErr error
-	r.startControllerOnce.Do(func() {
+	r.startControllersOnce.Do(func() {
 		log.Info("All required CustomResourceDefinitions are installed, setting up the controllers")
 		startControllersErr = r.setupControllers(r.Manager)
 	})
@@ -116,19 +112,12 @@ func (r *DynamicController) isOneOfRequiredCRDs(obj client.Object) bool {
 	}
 
 	return lo.ContainsBy(r.RequiredCRDs, func(gvr schema.GroupVersionResource) bool {
-		cl := r.Manager.GetClient()
-		gvk, err := cl.RESTMapper().KindFor(gvr)
-		if err != nil {
-			r.Log.Error(err, "failed to get GVK for GVR", "gvr", gvr)
-			return false
-		}
-
 		versionMatches := lo.ContainsBy(crd.Spec.Versions, func(crdv apiextensionsv1.CustomResourceDefinitionVersion) bool {
-			return crdv.Name == gvk.Version
+			return crdv.Name == gvr.Version
 		})
 
-		return crd.Spec.Group == gvk.Group &&
-			crd.Spec.Names.Kind == gvk.Kind &&
+		return crd.Spec.Group == gvr.Group &&
+			crd.Status.AcceptedNames.Plural == gvr.Resource &&
 			versionMatches
 	})
 }

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,6 +29,7 @@ import (
 
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/annotations"
 	ctrlref "github.com/kong/kubernetes-ingress-controller/v2/internal/controllers/reference"
+	ctrlutils "github.com/kong/kubernetes-ingress-controller/v2/internal/controllers/utils"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/dataplane"
 	"github.com/kong/kubernetes-ingress-controller/v2/internal/util"
 )
@@ -35,7 +38,10 @@ import (
 // Vars & Consts
 // -----------------------------------------------------------------------------
 
-var gatewayV1beta1Group = gatewayv1beta1.Group(gatewayv1beta1.GroupName)
+var (
+	ErrUnmanagedAnnotation = errors.New("invalid unmanaged annotation value")
+	gatewayV1beta1Group    = gatewayv1beta1.Group(gatewayv1beta1.GroupName)
+)
 
 // -----------------------------------------------------------------------------
 // Gateway Controller - GatewayReconciler
@@ -49,8 +55,11 @@ type GatewayReconciler struct { //nolint:revive
 	Scheme          *runtime.Scheme
 	DataplaneClient *dataplane.KongClient
 
-	WatchNamespaces  []string
-	CacheSyncTimeout time.Duration
+	WatchNamespaces []string
+	// If enableReferenceGrant is true, controller will watch ReferenceGrants
+	// to invalidate or allow cross-namespace TLSConfigs in gateways.
+	enableReferenceGrant bool
+	CacheSyncTimeout     time.Duration
 
 	ReferenceIndexers ctrlref.CacheIndexers
 
@@ -64,6 +73,12 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.PublishServiceRef.Name == "" || r.PublishServiceRef.Namespace == "" {
 		return fmt.Errorf("publish service must be configured")
 	}
+
+	r.enableReferenceGrant = ctrlutils.CRDExists(mgr.GetRESTMapper(), schema.GroupVersionResource{
+		Group:    gatewayv1beta1.GroupVersion.Group,
+		Version:  gatewayv1beta1.GroupVersion.Version,
+		Resource: "referencegrants",
+	})
 
 	// generate the controller object and attach it to the manager and link the reconciler object
 	c, err := controller.New("gateway-controller", mgr, controller.Options{
@@ -109,12 +124,14 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	// watch ReferenceGrants, which may invalidate or allow cross-namespace TLSConfigs
-	if err := c.Watch(
-		&source.Kind{Type: &gatewayv1beta1.ReferenceGrant{}},
-		handler.EnqueueRequestsFromMapFunc(r.listReferenceGrantsForGateway),
-		predicate.NewPredicateFuncs(referenceGrantHasGatewayFrom),
-	); err != nil {
-		return err
+	if r.enableReferenceGrant {
+		if err := c.Watch(
+			&source.Kind{Type: &gatewayv1beta1.ReferenceGrant{}},
+			handler.EnqueueRequestsFromMapFunc(r.listReferenceGrantsForGateway),
+			predicate.NewPredicateFuncs(referenceGrantHasGatewayFrom),
+		); err != nil {
+			return err
+		}
 	}
 
 	// start the required gatewayclass controller as well
@@ -481,8 +498,10 @@ func (r *GatewayReconciler) reconcileUnmanagedGateway(ctx context.Context, log l
 	// the ReferenceGrants need to be retrieved to ensure that all gateway listeners reference
 	// TLS secrets they are granted for
 	referenceGrantList := &gatewayv1beta1.ReferenceGrantList{}
-	if err := r.Client.List(ctx, referenceGrantList); err != nil {
-		return ctrl.Result{}, err
+	if r.enableReferenceGrant {
+		if err := r.Client.List(ctx, referenceGrantList); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// TODO https://github.com/Kong/kubernetes-ingress-controller/issues/2559 check cross-Gateway compatibility

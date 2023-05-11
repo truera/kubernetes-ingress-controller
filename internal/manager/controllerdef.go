@@ -342,11 +342,6 @@ func setupControllers(
 					{
 						Group:    gatewayv1beta1.GroupVersion.Group,
 						Version:  gatewayv1beta1.GroupVersion.Version,
-						Resource: "referencegrants",
-					},
-					{
-						Group:    gatewayv1beta1.GroupVersion.Group,
-						Version:  gatewayv1beta1.GroupVersion.Version,
 						Resource: "httproutes",
 					},
 				},
@@ -382,6 +377,11 @@ func setupControllers(
 				Log:              ctrl.Log.WithName("controllers").WithName("Dynamic/gatewayv1alpha2"),
 				CacheSyncTimeout: c.CacheSyncTimeout,
 				RequiredCRDs: []schema.GroupVersionResource{
+					{
+						Group:    gatewayv1beta1.GroupVersion.Group,
+						Version:  gatewayv1beta1.GroupVersion.Version,
+						Resource: "referencegrants",
+					},
 					{
 						Group:    gatewayv1alpha2.GroupVersion.Group,
 						Version:  gatewayv1alpha2.GroupVersion.Version,

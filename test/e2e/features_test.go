@@ -322,7 +322,7 @@ func TestDeployAllInOneDBLESSGateway(t *testing.T) {
 		pods, err := env.Cluster().Client().CoreV1().Pods(controllerDeploymentNN.Namespace).List(ctx, controllerDeploymentListOptions)
 		require.NoError(t, err)
 
-		expectedMsg := "Required CRDs for Dynamic/gatewayv1beta1 are not installed, setting up a watch for them in case they are installed afterward"
+		expectedMsg := "Required CustomResourceDefinitions are not installed, setting up a watch for them in case they are installed afterward"
 		for _, pod := range pods.Items {
 			logs, err := getPodLogs(ctx, t, env, pod.Namespace, pod.Name)
 			if err != nil {

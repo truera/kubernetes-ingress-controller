@@ -114,7 +114,7 @@ func getTestManifest(t *testing.T, baseManifestPath string) io.Reader {
 	manifestsReader, err = os.Open(baseManifestPath)
 	require.NoError(t, err)
 
-	manifestsReader, err = patchControllerImageFromEnv(manifestsReader)
+	manifestsReader, err = patchControllerImageFromEnv(t, manifestsReader)
 	if err != nil {
 		t.Logf("failed patching controller image (%v), using default manifest %v", err, baseManifestPath)
 		return manifestsReader
@@ -167,13 +167,15 @@ func patchGatewayImageFromEnv(t *testing.T, manifestsReader io.Reader) (io.Reade
 		return patchedManifestsReader, nil
 	}
 
+	t.Log("kong image override undefined, using defaults")
 	return manifestsReader, nil
 }
 
 // patchControllerImageFromEnv will optionally replace a default controller image in manifests with `controllerImageOverride`
 // if it's set.
-func patchControllerImageFromEnv(manifestReader io.Reader) (io.Reader, error) {
+func patchControllerImageFromEnv(t *testing.T, manifestReader io.Reader) (io.Reader, error) {
 	if controllerImageOverride != "" {
+		t.Logf("replace controller image to %s", controllerImageOverride)
 		split := strings.Split(controllerImageOverride, ":")
 		if len(split) < 2 {
 			return nil, fmt.Errorf("could not parse override image '%v', expected <repo>:<tag> format", controllerImageOverride)
@@ -185,6 +187,8 @@ func patchControllerImageFromEnv(manifestReader io.Reader) (io.Reader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed patching override image '%v': %w", controllerImageOverride, err)
 		}
+	} else {
+		t.Log("controller image override undefined, using defaults")
 	}
 	return manifestReader, nil
 }

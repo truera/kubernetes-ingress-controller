@@ -28,18 +28,18 @@ func (e ErrUpdateSkippedDueToBackoffStrategy) Is(err error) bool {
 }
 
 // UpdateStrategyWithBackoff decorates any UpdateStrategy to respect a passed adminapi.UpdateBackoffStrategy.
-type UpdateStrategyWithBackoff struct {
-	decorated       UpdateStrategy
+type UpdateStrategyWithBackoff[upStrategyT UpdateStrategy] struct {
+	decorated       upStrategyT
 	backoffStrategy adminapi.UpdateBackoffStrategy
 	log             logrus.FieldLogger
 }
 
-func NewUpdateStrategyWithBackoff(
-	decorated UpdateStrategy,
+func NewUpdateStrategyWithBackoff[upStrategyT UpdateStrategy](
+	decorated upStrategyT,
 	backoffStrategy adminapi.UpdateBackoffStrategy,
 	log logrus.FieldLogger,
-) UpdateStrategyWithBackoff {
-	return UpdateStrategyWithBackoff{
+) UpdateStrategyWithBackoff[UpdateStrategy] {
+	return UpdateStrategyWithBackoff[UpdateStrategy]{
 		decorated:       decorated,
 		backoffStrategy: backoffStrategy,
 		log:             log,
@@ -51,7 +51,7 @@ func NewUpdateStrategyWithBackoff(
 // In case it's not, it will return a predefined ErrUpdateSkippedDueToBackoffStrategy.
 // In case it is, apart from calling UpdateStrategy.Update, it will also register a success or a failure of an update
 // attempt so that the UpdateBackoffStrategy can keep track of it.
-func (s UpdateStrategyWithBackoff) Update(ctx context.Context, targetContent ContentWithHash) (
+func (s UpdateStrategyWithBackoff[T]) Update(ctx context.Context, targetContent ContentWithHash) (
 	err error,
 	resourceErrors []ResourceError,
 	resourceErrorsParseErr error,
@@ -71,10 +71,10 @@ func (s UpdateStrategyWithBackoff) Update(ctx context.Context, targetContent Con
 	return err, resourceErrors, resourceErrorsParseErr
 }
 
-func (s UpdateStrategyWithBackoff) MetricsProtocol() metrics.Protocol {
+func (s UpdateStrategyWithBackoff[T]) MetricsProtocol() metrics.Protocol {
 	return s.decorated.MetricsProtocol()
 }
 
-func (s UpdateStrategyWithBackoff) Type() string {
+func (s UpdateStrategyWithBackoff[T]) Type() string {
 	return fmt.Sprintf("WithBackoff(%s)", s.decorated.Type())
 }

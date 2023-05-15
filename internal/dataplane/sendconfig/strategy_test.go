@@ -47,30 +47,30 @@ func TestDefaultUpdateStrategyResolver_ResolveUpdateStrategy(t *testing.T) {
 	testCases := []struct {
 		isKonnect                     bool
 		inMemory                      bool
-		expectedStrategyType          string
+		expectedStrategyType          sendconfig.UpdateStrategy
 		expectKonnectRuntimeGroupCall bool
 	}{
 		{
 			isKonnect:                     true,
 			inMemory:                      false,
-			expectedStrategyType:          "WithBackoff(DBMode)",
+			expectedStrategyType:          sendconfig.UpdateStrategyWithBackoff[sendconfig.UpdateStrategyDBMode]{},
 			expectKonnectRuntimeGroupCall: true,
 		},
 		{
 			isKonnect:                     true,
 			inMemory:                      true,
-			expectedStrategyType:          "WithBackoff(DBMode)",
+			expectedStrategyType:          sendconfig.UpdateStrategyWithBackoff[sendconfig.UpdateStrategyInMemory]{},
 			expectKonnectRuntimeGroupCall: true,
 		},
 		{
 			isKonnect:            false,
 			inMemory:             false,
-			expectedStrategyType: "DBMode",
+			expectedStrategyType: sendconfig.UpdateStrategyDBMode{},
 		},
 		{
 			isKonnect:            false,
 			inMemory:             true,
-			expectedStrategyType: "InMemory",
+			expectedStrategyType: sendconfig.UpdateStrategyInMemory{},
 		},
 	}
 
@@ -92,7 +92,7 @@ func TestDefaultUpdateStrategyResolver_ResolveUpdateStrategy(t *testing.T) {
 			}, logrus.New())
 
 			strategy := resolver.ResolveUpdateStrategy(updateClient)
-			require.Equal(t, tc.expectedStrategyType, strategy.Type())
+			require.IsType(t, tc.expectedStrategyType, strategy)
 			assert.True(t, client.adminAPIClientWasCalled)
 			assert.Equal(t, tc.expectKonnectRuntimeGroupCall, client.konnectRuntimeGroupWasCalled)
 		})
